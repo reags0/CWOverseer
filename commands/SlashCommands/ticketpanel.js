@@ -210,6 +210,11 @@ module.exports = {
       return;
     }
 
+    if (action === 'claim') {
+      await handleClaimTicket(interaction);
+      return;
+    }
+
     if (action === 'close') {
       await handleCloseTicket(interaction);
     }
@@ -376,6 +381,10 @@ async function handleOpenTicket(interaction, categoryId, supportRoleId) {
 
   const closeControls = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
+      .setCustomId('ticketpanel:claim')
+      .setLabel('Claim Ticket')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
       .setCustomId('ticketpanel:close')
       .setLabel('Close Ticket')
       .setStyle(ButtonStyle.Danger)
@@ -394,6 +403,49 @@ async function handleOpenTicket(interaction, categoryId, supportRoleId) {
   await interaction.reply({
     content: `Your ticket has been created: ${ticketChannel}`,
     ephemeral: true,
+  });
+}
+
+async function handleClaimTicket(interaction) {
+  if (!interaction.inGuild()) {
+    await interaction.reply({
+      content: 'This button can only be used inside a server ticket.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+    await interaction.reply({
+      content: 'Only staff can claim tickets.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const channel = interaction.channel;
+
+  if (channel.topic?.includes('Claimed by:')) {
+    await interaction.reply({
+      content: `This ticket is already claimed.\n${channel.topic}`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const updatedName = channel.name.startsWith('claimed-')
+    ? channel.name
+    : `claimed-${channel.name}`.slice(0, 100);
+
+  const updatedTopic = `${channel.topic || 'Support ticket'} | Claimed by: ${interaction.user.tag} (${interaction.user.id})`;
+
+  await channel.edit({
+    name: updatedName,
+    topic: updatedTopic,
+  });
+
+  await interaction.reply({
+    content: `${interaction.user} claimed this ticket.`,
   });
 }
 
