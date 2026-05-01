@@ -92,16 +92,28 @@ async function handleGuildMemberAdd(member, client) {
     await refreshGuildInvites(member.guild, client);
 
     if (!usedInvite || !(usedInvite.inviterId || usedInvite.inviter?.id)) {
-      return;
+      return {
+        inviteCount: 0,
+        inviterId: null,
+        usedInviteCode: null,
+      };
     }
 
     const inviterId = usedInvite.inviterId || usedInvite.inviter.id;
-    const guildInviteCounts = client.inviteCounts.get(member.guild.id) || new Map();
+    const inviteCount = getInviteCount(client, member.guild.id, inviterId);
 
-    guildInviteCounts.set(inviterId, (guildInviteCounts.get(inviterId) || 0) + 1);
-    client.inviteCounts.set(member.guild.id, guildInviteCounts);
+    return {
+      inviteCount,
+      inviterId,
+      usedInviteCode: usedInvite.code,
+    };
   } catch (error) {
     console.error(`Failed to track invite for member ${member.user.id}:`, error);
+    return {
+      inviteCount: 0,
+      inviterId: null,
+      usedInviteCode: null,
+    };
   }
 }
 

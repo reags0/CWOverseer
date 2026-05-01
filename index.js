@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const {
+  ChannelType,
+  Client,
+  Collection,
+  GatewayIntentBits,
+  PermissionFlagsBits,
+} = require('discord.js');
 const { loadCommands } = require('./handlers/loadCommands');
 const { ensureShopSchema } = require('./utils/initDatabase');
 const {
@@ -42,7 +48,8 @@ client.on('inviteDelete', (invite) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
-  await handleGuildMemberAdd(member, client);
+  const inviteData = await handleGuildMemberAdd(member, client);
+  await sendWelcomeMessage(member, inviteData);
 });
 
 
@@ -175,4 +182,48 @@ function loadEnv() {
       process.env[key] = value;
     }
   }
+}
+
+async function sendWelcomeMessage(member, inviteData) {
+  const welcomeChannel = resolveWelcomeChannel(member.guild);
+
+  if (!welcomeChannel || !welcomeChannel.isTextBased()) {
+    return;
+  }
+
+  let content = `Welcome to **${member.guild.name}**, ${member}!`;
+
+  if (inviteData?.inviterId) {
+    content +=
+      `\nInvited by: <@${inviteData.inviterId}>` +
+      `\nThey now have **${inviteData.inviteCount}** invite(s).`;
+  } else {
+    content += '\nI could not determine which invite was used.';
+  }
+
+  await welcomeChannel.send({ content });
+}
+
+function resolveWelcomeChannel(guild) {
+  const configuredChannelId = process.env.WELCOME_CHANNEL_ID;
+
+  if (configuredChannelId) {
+    const configuredChannel = guild.channels.cache.get(configuredChannelId);
+
+    if (configuredChannel?.type === ChannelType.GuildText) {
+      return configuredChannel;
+    }
+  }
+
+  if (guild.systemChannel?.type === ChannelType.GuildText) {
+    return guild.systemChannel;
+  }
+
+  return guild.channels.cache.find(
+    (channel) =>
+      channel.type === ChannelType.GuildText &&
+      channel
+        .permissionsFor(guild.members.me)
+        ?.has(PermissionFlagsBits.SendMessages)
+  );
 }
