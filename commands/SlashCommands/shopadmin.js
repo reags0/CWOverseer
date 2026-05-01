@@ -1,243 +1,257 @@
-const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const {
-  addCode,
-  deleteCode,
-  getCodes,
-  getProductSummary,
-  getStockSummary,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+} = require('discord.js');
+
+const {
+  completePurchase,
+  getBasket,
+  getBasketTotal,
 } = require('../../utils/shopDatabase');
 
-function parsePrice(input) {
-  if (!input) return NaN;
-  const normalized = input.replace(',', '.');
-  const number = parseFloat(normalized);
-  return isNaN(number) ? NaN : number;
-}
+const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('shopadmin')
-    .setDescription('Manage shop stock codes.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('addcode')
-        .setDescription('Add a stock code to the shop database.')
-        .addStringOption((option) =>
-          option.setName('product').setDescription('The product name').setRequired(true)
-        )
-        .addStringOption((option) =>
-          option.setName('code').setDescription('The stock code').setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName('price')
-            .setDescription('Price (e.g. 1.25 or 1,25)')
-            .setRequired(true)
-        )
-        .addAttachmentOption((option) =>
-          option.setName('image').setDescription('Optional image').setRequired(false)
-        )
-        .addBooleanOption((option) =>
-          option
-            .setName('one_time')
-            .setDescription('Consume after purchase')
-            .setRequired(false)
-        )
-    )
-
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('stock')
-        .setDescription('View stock')
-        .addStringOption((option) =>
-          option.setName('product').setDescription('Optional product').setRequired(false)
-        )
-    )
-
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('viewcodes')
-        .setDescription('View stored codes')
-        .addStringOption((option) =>
-          option.setName('product').setDescription('Optional filter').setRequired(false)
-        )
-    )
-
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('deletecode')
-        .setDescription('Delete a stored code')
-        .addStringOption((option) =>
-          option.setName('item_id').setDescription('Item ID').setRequired(true)
-        )
-    ),
+    .setName('purchase')
+    .setDescription('Create a purchase ticket with the codes in your basket.'),
 
   async execute(interaction) {
     try {
-      const subcommand = interaction.options.getSubcommand();
+      // ✅ GET BASKET
+      const basket = await getBasket(interaction.user.id);
 
-      //
-      // ✅ ADD CODE
-      //
-      if (subcommand === 'addcode') {
-        const productName = interaction.options.getString('product');
-        const code = interaction.options.getString('code');
-        const priceInput = interaction.options.getString('price');
-        const image = interaction.options.getAttachment('image');
-        const oneTime = interaction.options.getBoolean('one_time') || false;
+      if (!basket || basket.length === 0) {
+        await interaction.reply({
+          content: 'Your basket is empty, so there is nothing to purchase.',
+          ephemeral: true,
+        });
+        return;
+      }
 
-        const price = parsePrice(priceInput);
+      // ✅ GET TOTALS (Postgres returns object)
+      const total = await getBasketTotal(interaction.user.id);
 
-        if (isNaN(price) || price < 0) {
-          await interaction.reply({
-            content: 'Invalid price. Use `1.25` or `1,25`',
-            ephemeral: true,
-          });
-          return;
+      // ✅ GROUP ITEMS
+      const grouped = {};
+
+      for (const item of basket) {
+        const name = item.product_name || item.productName || 'Unknown';
+
+        if (!grouped[name]) {
+          grouped[name] = {
+            quantity: 0,
+            price: Number(item.price || 0),
+          };
         }
 
-        const item = await addCode(
-          productName,
-          code,
-          interaction.user.id,
-          oneTime,
-          image?.url || null,
-          price
+        grouped[name].quantity += 1;
+      }
+
+      // ✅ SAFE MAP (fixed syntax + number safety)
+      const summaryLines = Object.entries(grouped).map(([name, data]) => {
+        const itemTotal = Number(data.price || 0) * data.quantity;
+        return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
+      });
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const guild = interaction.guild;
+
+      const safeName = interaction.user.username
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 70) || 'customer';
+
+      // ✅ CREATE CHANNEL
+      const ticketChannel = await guild.channels.create({
+        name: `purchase-${safeName}`,
+        type: ChannelType.GuildText,
+        parent:
+          process.env.PURCHASE_CATEGORY_ID || DEFAULT_PURCHASE_CATEGORY_ID,
+        topic: `Purchase ticket for ${interaction.user.tag} (${interaction.user.id})`,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            deny: [PermissionFlagsBits.ViewChannel],
+          },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+            ],
+          },
+          {
+            id: interaction.client.user.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ManageChannels,
+              PermissionFlagsBits.ReadMessageHistory,
+            ],
+          },
+        ],
+      });
+
+      // ✅ COMPLETE PURCHASE
+      const purchasedItems = await completePurchase(interaction.user.id);
+
+      // ✅ FORMAT ITEMS
+      const itemLines = purchasedItems.map((item) => {
+        const name = item.product_name || item.productName || 'Unknown';
+
+        return (
+          `**${name}**\n` +
+          `💰 £${Number(item.price || 0).toFixed(2)}\n` +
+          `Code: \`${item.code}\`\n` +
+          `Image: ${item.image_url || item.imageUrl || 'None'}`
         );
+      });
 
-        await interaction.reply({
-          content:
-            `Stored ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}**\n` +
-            `💰 Price: £${item.price.toFixed(2)}\n` +
-            `Item ID: \`${item.id}\`\n` +
-            `Item Image: ${item.imageUrl || 'None'}`,
-          ephemeral: true,
-        });
-        return;
+      const chunks = chunkLines(itemLines, 1800);
+
+      const controls = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`purchase:claim:${interaction.user.id}`)
+          .setLabel('Claim Ticket')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`purchase:close:${interaction.user.id}`)
+          .setLabel('Close Ticket')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      // ✅ SEND SUMMARY
+      await ticketChannel.send({
+        content:
+          `🧾 **Purchase Ticket**\n\n` +
+          `👤 Customer: <@${interaction.user.id}>\n\n` +
+          `🛒 **Order Summary:**\n` +
+          `${summaryLines.join('\n')}\n\n` +
+          `💰 **Total: £${Number(total.gbp || 0).toFixed(2)}**` +
+          (total.robux
+            ? `\n🟩 **Robux: ${Number(total.robux).toFixed(0)}**`
+            : '') +
+          `\n\n---\n📦 **Delivered Codes Below:**`,
+      });
+
+      await ticketChannel.send({
+        content: 'Staff controls for this ticket:',
+        components: [controls],
+      });
+
+      for (const chunk of chunks) {
+        await ticketChannel.send(chunk);
       }
 
-      //
-      // ✅ STOCK
-      //
-      if (subcommand === 'stock') {
-        const productName = interaction.options.getString('product');
-
-        if (productName) {
-          const summary = await getProductSummary(productName);
-
-          if (!summary) {
-            await interaction.reply({
-              content: 'Product not found.',
-              ephemeral: true,
-            });
-            return;
-          }
-
-          await interaction.reply({
-            content:
-              `**${summary.productName}** stock\n` +
-              `Total: ${summary.total}\n` +
-              `Available: ${summary.available}\n` +
-              `Reserved: ${summary.reserved}\n` +
-              `Reusable: ${summary.reusable}\n` +
-              `One-time: ${summary.oneTime}`,
-            ephemeral: true,
-          });
-          return;
-        }
-
-        const stock = await getStockSummary();
-
-        if (!stock || stock.length === 0) {
-          await interaction.reply({
-            content: 'Database is empty.',
-            ephemeral: true,
-          });
-          return;
-        }
-
-        const lines = stock.map(
-          (entry) =>
-            `**${entry.productName}**: ${entry.available} available, ${entry.reserved} reserved`
-        );
-
-        await interaction.reply({
-          content: lines.join('\n'),
-          ephemeral: true,
-        });
-        return;
-      }
-
-      //
-      // ✅ VIEW CODES (MAIN ISSUE WAS HERE)
-      //
-      if (subcommand === 'viewcodes') {
-        const productName = interaction.options.getString('product');
-
-        const codes = await getCodes(productName);
-
-        // ✅ FIX: handle undefined/null safely
-        if (!codes || codes.length === 0) {
-          await interaction.reply({
-            content: 'No codes found.',
-            ephemeral: true,
-          });
-          return;
-        }
-
-        const lines = codes.map((item) => {
-          const name = item.product_name || item.productName || 'Unknown';
-
-          return (
-            `**${name}** | £${Number(item.price || 0).toFixed(2)} | ` +
-            `\`${item.id}\` | \`${item.code}\` | ${item.status}`
-          );
-        });
-
-        await interaction.reply({
-          content: lines.join('\n').slice(0, 1900),
-          ephemeral: true,
-        });
-
-        return;
-      }
-
-      //
-      // ✅ DELETE
-      //
-      if (subcommand === 'deletecode') {
-        const itemId = interaction.options.getString('item_id');
-
-        const removedItem = await deleteCode(itemId);
-
-        if (!removedItem) {
-          await interaction.reply({
-            content: `No code found with ID \`${itemId}\``,
-            ephemeral: true,
-          });
-          return;
-        }
-
-        const name = removedItem.product_name || removedItem.productName || 'Unknown';
-
-        await interaction.reply({
-          content:
-            `Deleted **${name}**\n` +
-            `Code: \`${removedItem.code}\``,
-          ephemeral: true,
-        });
-      }
+      await interaction.editReply({
+        content: `Purchase ticket created successfully: ${ticketChannel}`,
+      });
     } catch (err) {
-      console.error('SHOPADMIN ERROR:', err);
+      console.error('PURCHASE ERROR:', err);
 
       if (!interaction.replied) {
         await interaction.reply({
-          content: '❌ There was an error running this command.',
+          content: '❌ There was an error creating the purchase ticket.',
           ephemeral: true,
         });
       }
     }
   },
+
+  async handleButton(interaction) {
+    try {
+      if (!interaction.inGuild()) {
+        await interaction.reply({
+          content: 'This button can only be used inside a server ticket channel.',
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+        await interaction.reply({
+          content: 'Only staff members can use ticket controls.',
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const [, action] = interaction.customId.split(':');
+      const channel = interaction.channel;
+
+      if (action === 'claim') {
+        const alreadyClaimed = channel.topic?.includes('Claimed by:');
+
+        if (alreadyClaimed) {
+          await interaction.reply({
+            content: `This ticket is already claimed.\n${channel.topic}`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const updatedTopic =
+          `${channel.topic || 'Purchase ticket'} | Claimed by: ` +
+          `${interaction.user.tag} (${interaction.user.id})`;
+
+        let updatedName = channel.name;
+
+        if (!updatedName.startsWith('claimed-')) {
+          updatedName = `claimed-${updatedName}`.slice(0, 100);
+        }
+
+        await channel.edit({
+          name: updatedName,
+          topic: updatedTopic,
+        });
+
+        await interaction.reply({
+          content: `${interaction.user} claimed this ticket.`,
+        });
+        return;
+      }
+
+      if (action === 'close') {
+        await interaction.reply({
+          content: `Closing ticket by request of ${interaction.user}...`,
+        });
+
+        await channel.delete('Purchase ticket closed by staff');
+      }
+    } catch (err) {
+      console.error('BUTTON ERROR:', err);
+    }
+  },
 };
+
+function chunkLines(lines, maxLength) {
+  const chunks = [];
+  let currentChunk = '';
+
+  for (const line of lines) {
+    const candidate = currentChunk
+      ? `${currentChunk}\n\n${line}`
+      : line;
+
+    if (candidate.length > maxLength) {
+      if (currentChunk) chunks.push(currentChunk);
+      currentChunk = line;
+      continue;
+    }
+
+    currentChunk = candidate;
+  }
+
+  if (currentChunk) chunks.push(currentChunk);
+
+  return chunks;
+}
