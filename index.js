@@ -23,6 +23,26 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
+
+// ✅ ADD THIS BLOCK
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  if (message.content.toLowerCase() === '+line') {
+    try {
+      await message.delete().catch(() => {});
+
+      await message.channel.send(
+        'https://www.image2url.com/r2/default/gifs/1777641980064-d7778812-bd9e-40ea-9e38-d0048c3ad964.gif'
+      );
+    } catch (err) {
+      console.error('Error in +line command:', err);
+    }
+  }
+});
+// ✅ END BLOCK
+
+
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
