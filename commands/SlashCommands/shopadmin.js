@@ -7,13 +7,25 @@ const {
   getStockSummary,
 } = require('../../utils/shopDatabase');
 
+//
+// ✅ NEW: smart price parser
+//
+function parsePrice(input) {
+  if (!input) return NaN;
+
+  const normalized = input.replace(',', '.');
+  const number = parseFloat(normalized);
+
+  return isNaN(number) ? NaN : number;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('shopadmin')
     .setDescription('Manage shop stock codes.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
-    // ✅ ADDCODE UPDATED
+    // ✅ ADDCODE UPDATED (STRING PRICE)
     .addSubcommand((subcommand) =>
       subcommand
         .setName('addcode')
@@ -30,10 +42,10 @@ module.exports = {
             .setDescription('The stock code to store')
             .setRequired(true)
         )
-        .addIntegerOption((option) => // ✅ NEW
+        .addStringOption((option) => // ✅ CHANGED
           option
             .setName('price')
-            .setDescription('Price for this item')
+            .setDescription('Price (e.g. 1.25 or 1,25)')
             .setRequired(true)
         )
         .addAttachmentOption((option) =>
@@ -93,9 +105,20 @@ module.exports = {
     if (subcommand === 'addcode') {
       const productName = interaction.options.getString('product');
       const code = interaction.options.getString('code');
-      const price = interaction.options.getInteger('price'); // ✅ NEW
+      const priceInput = interaction.options.getString('price'); // ✅ STRING
       const image = interaction.options.getAttachment('image');
       const oneTime = interaction.options.getBoolean('one_time') || false;
+
+      const price = parsePrice(priceInput);
+
+      // ✅ VALIDATION
+      if (isNaN(price) || price < 0) {
+        await interaction.reply({
+          content: 'Invalid price. Use format like `1.25` or `1,25`',
+          ephemeral: true,
+        });
+        return;
+      }
 
       const item = addCode(
         productName,
@@ -103,13 +126,13 @@ module.exports = {
         interaction.user.id,
         oneTime,
         image?.url || null,
-        price // ✅ PASS PRICE
+        price
       );
 
       await interaction.reply({
         content:
           `Stored a new ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}**\n` +
-          `💰 Price: £${item.price || 0}\n` +
+          `💰 Price: £${item.price.toFixed(2)}\n` +
           `Item ID: \`${item.id}\`\n` +
           `Item Image: ${item.imageUrl || 'None'}`,
         ephemeral: true,
@@ -159,7 +182,7 @@ module.exports = {
       return;
     }
 
-    // ✅ VIEWCODES UPDATED (shows price)
+    // ✅ VIEWCODES UPDATED (formatted price)
     if (subcommand === 'viewcodes') {
       const productName = interaction.options.getString('product');
       const codes = getCodes(productName);
@@ -176,7 +199,7 @@ module.exports = {
 
       const lines = codes.map(
         (item) =>
-          `**${item.productName}** | £${item.price || 0} | \`${item.id}\` | \`${item.code}\` | ${item.status} | ` +
+          `**${item.productName}** | £${(item.price || 0).toFixed(2)} | \`${item.id}\` | \`${item.code}\` | ${item.status} | ` +
           `${item.oneTime ? 'one-time' : 'reusable'} | baskets: ${item.basketReservations} | ` +
           `image: ${item.imageUrl || 'None'}`
       );
@@ -205,9 +228,9 @@ module.exports = {
         ephemeral: true,
       });
 
-      for (let index = 1; index < chunks.length; index += 1) {
+      for (let i = 1; i < chunks.length; i++) {
         await interaction.followUp({
-          content: chunks[index],
+          content: chunks[i],
           ephemeral: true,
         });
       }
