@@ -18,6 +18,7 @@ const {
 } = require('./utils/inviteTracker');
 
 const WELCOME_CHANNEL_ID = '1499542330682900607';
+const AUTO_ROLE_ID = '1499542329755963409';
 
 loadEnv();
 
@@ -51,6 +52,7 @@ client.on('inviteDelete', (invite) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
+  await assignAutoRole(member);
   const inviteData = await handleGuildMemberAdd(member, client);
   await sendWelcomeMessage(member, inviteData);
 });
@@ -242,4 +244,19 @@ function resolveWelcomeChannel(guild) {
         .permissionsFor(guild.members.me)
         ?.has(PermissionFlagsBits.SendMessages)
   );
+}
+
+async function assignAutoRole(member) {
+  const role = member.guild.roles.cache.get(AUTO_ROLE_ID);
+
+  if (!role) {
+    console.error(`Auto role ${AUTO_ROLE_ID} was not found in guild ${member.guild.id}.`);
+    return;
+  }
+
+  try {
+    await member.roles.add(role);
+  } catch (error) {
+    console.error(`Failed to assign auto role to ${member.user.id}:`, error);
+  }
 }
