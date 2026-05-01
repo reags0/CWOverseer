@@ -3,6 +3,7 @@ const {
   addToBasket,
   clearBasket,
   getBasket,
+  getBasketTotal, // ✅ NEW
   removeFromBasket,
 } = require('../../utils/shopDatabase');
 
@@ -78,8 +79,7 @@ module.exports = {
       await interaction.reply({
         content:
           `Added **${item.productName}** to your basket.\n` +
-          `Price: £${item.price || 0}\n` +
-          `Item Image: ${item.imageUrl || 'None'}\n` +
+          `💰 Price: £${item.price || 0}\n` +
           `Code: \`${item.code}\``,
         ephemeral: true,
       });
@@ -97,23 +97,36 @@ module.exports = {
         return;
       }
 
-      let total = 0;
+      // ✅ GROUP ITEMS (cleaner)
+      const grouped = {};
 
-      const lines = basket.map((item) => {
-        const price = item.price || 0;
-        total += price;
+      for (const item of basket) {
+        const key = item.productName;
 
-        return (
-          `**${item.productName}**\n` +
-          `Price: £${price}\n` +
-          `Item Image: ${item.imageUrl || 'None'}\n` +
-          `Code: \`${item.code}\``
-        );
+        if (!grouped[key]) {
+          grouped[key] = {
+            quantity: 0,
+            price: item.price || 0,
+          };
+        }
+
+        grouped[key].quantity += 1;
+      }
+
+      // ✅ BUILD MESSAGE
+      const lines = Object.entries(grouped).map(([name, data]) => {
+        const total = data.price * data.quantity;
+
+        return `**${name}** x${data.quantity} - £${total}`;
       });
+
+      // ✅ USE CENTRAL TOTAL FUNCTION
+      const total = getBasketTotal(userId);
 
       await interaction.reply({
         content:
-          lines.join('\n\n') +
+          `🛒 **Your Basket**\n\n` +
+          lines.join('\n') +
           `\n\n💰 **Total: £${total}**`,
         ephemeral: true,
       });
