@@ -17,6 +17,7 @@ const client = new Client({
 
 client.commands = new Collection();
 client.embedBuilderSessions = new Collection();
+client.ticketPanelSessions = new Collection();
 
 loadCommands(client);
 
