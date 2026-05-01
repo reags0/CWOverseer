@@ -24,38 +24,32 @@ module.exports = {
     const basket = await getBasket(interaction.user.id);
 
     if (!basket || basket.length === 0) {
-      await interaction.reply({
+      return interaction.reply({
         content: 'Your basket is empty, so there is nothing to purchase.',
         ephemeral: true,
       });
-      return;
     }
 
     const total = await getBasketTotal(interaction.user.id);
 
-    // ✅ Group items safely
+    // Group items
     const grouped = {};
 
     for (const item of basket) {
-      const name = item.product_name || item.productName || 'Unknown';
+      const name = item.product_name || item.productName;
 
       if (!grouped[name]) {
         grouped[name] = {
           quantity: 0,
-          price: item.price || 0,
+          price: Number(item.price || 0),
         };
       }
 
       grouped[name].quantity += 1;
     }
 
-    // ✅ SAFE version (no destructuring)
-    const summaryLines = Object.entries(grouped).map((entry) => {
-      const name = entry[0];
-      const data = entry[1];
-
+    const summaryLines = Object.entries(grouped).map(([name, data]) => {
       const itemTotal = data.price * data.quantity;
-
       return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
     });
 
@@ -63,17 +57,20 @@ module.exports = {
 
     const guild = interaction.guild;
 
-    const safeName = interaction.user.username
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 70) || 'customer';
+    const safeName =
+      interaction.user.username
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 70) || 'customer';
 
     const ticketChannel = await guild.channels.create({
       name: `purchase-${safeName}`,
       type: ChannelType.GuildText,
-      parent: process.env.PURCHASE_CATEGORY_ID || DEFAULT_PURCHASE_CATEGORY_ID,
+      parent:
+        process.env.PURCHASE_CATEGORY_ID ||
+        DEFAULT_PURCHASE_CATEGORY_ID,
       topic: `Purchase ticket for ${interaction.user.tag} (${interaction.user.id})`,
       permissionOverwrites: [
         {
@@ -103,15 +100,17 @@ module.exports = {
     const purchasedItems = await completePurchase(interaction.user.id);
 
     const itemLines = purchasedItems.map((item) => {
-      const name = item.product_name || item.productName || 'Unknown';
+      const name = item.product_name || item.productName;
 
-      return (
-        `**${name}**\n` +
-        `💰 £${(item.price || 0).toFixed(2)}\n` +
-        (item.robux_price ? `🟩 ${item.robux_price} Robux\n` : '') +
-        `Code: \`${item.code}\`\n` +
+      return [
+        `**${name}**`,
+        `💰 £${Number(item.price || 0).toFixed(2)}`,
+        item.robux_price ? `🟩 ${item.robux_price} Robux` : null,
+        `Code: \`${item.code}\``,
         `Image: ${item.image_url || item.imageUrl || 'None'}`
-      );
+      ]
+        .filter(Boolean)
+        .join('\n');
     });
 
     const chunks = chunkLines(itemLines, 1800);
@@ -133,8 +132,8 @@ module.exports = {
         `👤 Customer: <@${interaction.user.id}>\n\n` +
         `🛒 **Order Summary:**\n` +
         `${summaryLines.join('\n')}\n\n` +
-        `💰 **Total: £${((total && total.gbp) || 0).toFixed(2)}**` +
-        (total && total.robux ? `\n🟩 **Robux Total: ${total.robux}**` : '') +
+        `💰 **Total: £${Number(total.gbp || 0).toFixed(2)}**` +
+        (total.robux ? `\n🟩 **Robux Total: ${total.robux}**` : '') +
         `\n\n---\n📦 **Delivered Codes Below:**`,
     });
 
@@ -154,19 +153,21 @@ module.exports = {
 
   async handleButton(interaction) {
     if (!interaction.inGuild()) {
-      await interaction.reply({
-        content: 'This button can only be used inside a server ticket channel.',
+      return interaction.reply({
+        content: 'This button can only be used inside a server.',
         ephemeral: true,
       });
-      return;
     }
 
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
-      await interaction.reply({
-        content: 'Only staff members can use ticket controls.',
+    if (
+      !interaction.memberPermissions.has(
+        PermissionFlagsBits.ManageChannels
+      )
+    ) {
+      return interaction.reply({
+        content: 'Only staff can use ticket controls.',
         ephemeral: true,
       });
-      return;
     }
 
     const [, action] = interaction.customId.split(':');
@@ -176,64 +177,49 @@ module.exports = {
       const alreadyClaimed = channel.topic?.includes('Claimed by:');
 
       if (alreadyClaimed) {
-        await interaction.reply({
-          content: `This ticket is already claimed.\n${channel.topic}`,
+        return interaction.reply({
+          content: `Already claimed.\n${channel.topic}`,
           ephemeral: true,
         });
-        return;
-      }
-
-      const updatedTopic =
-        `${channel.topic || 'Purchase ticket'} | Claimed by: ${interaction.user.tag} (${interaction.user.id})`;
-
-      let updatedName = channel.name;
-
-      if (!updatedName.startsWith('claimed-')) {
-        updatedName = `claimed-${updatedName}`.slice(0, 100);
       }
 
       await channel.edit({
-        name: updatedName,
-        topic: updatedTopic,
+        name: channel.name.startsWith('claimed-')
+          ? channel.name
+          : `claimed-${channel.name}`,
+        topic: `${channel.topic} | Claimed by: ${interaction.user.tag}`,
       });
 
-      await interaction.reply({
+      return interaction.reply({
         content: `${interaction.user} claimed this ticket.`,
       });
-
-      return;
     }
 
     if (action === 'close') {
       await interaction.reply({
-        content: `Closing ticket by request of ${interaction.user}...`,
+        content: `Closing ticket...`,
       });
 
-      await channel.delete('Purchase ticket closed by staff');
+      await channel.delete();
     }
   },
 };
 
-// ✅ helper
 function chunkLines(lines, maxLength) {
   const chunks = [];
-  let currentChunk = '';
+  let current = '';
 
   for (const line of lines) {
-    const candidate = currentChunk
-      ? `${currentChunk}\n\n${line}`
-      : line;
+    const next = current ? `${current}\n\n${line}` : line;
 
-    if (candidate.length > maxLength) {
-      if (currentChunk) chunks.push(currentChunk);
-      currentChunk = line;
-      continue;
+    if (next.length > maxLength) {
+      if (current) chunks.push(current);
+      current = line;
+    } else {
+      current = next;
     }
-
-    currentChunk = candidate;
   }
 
-  if (currentChunk) chunks.push(currentChunk);
-
+  if (current) chunks.push(current);
   return chunks;
 }
