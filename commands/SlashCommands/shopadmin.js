@@ -32,7 +32,9 @@ module.exports = {
 
     const total = await getBasketTotal(interaction.user.id);
 
-    // ✅ GROUP ITEMS
+    // =========================
+    // ✅ FIXED GROUPING BLOCK
+    // =========================
     const grouped = {};
 
     for (const item of basket) {
@@ -48,10 +50,16 @@ module.exports = {
       grouped[name].quantity += 1;
     }
 
-    // ✅ FIXED MAP (this was your crash area)
-    const summaryLines = Object.entries(grouped).map(([name, data]) => {
+    // =========================
+    // ✅ SAFE SUMMARY (NO ARROW / TEMPLATE ISSUES)
+    // =========================
+    const summaryLines = Object.entries(grouped).map(function (entry) {
+      const name = entry[0];
+      const data = entry[1];
+
       const itemTotal = (data.price || 0) * data.quantity;
-      return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
+
+      return '**' + name + '** x' + data.quantity + ' - £' + itemTotal.toFixed(2);
     });
 
     await interaction.deferReply({ ephemeral: true });
@@ -123,7 +131,6 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
     );
 
-    // ✅ SUMMARY MESSAGE
     await ticketChannel.send({
       content:
         `🧾 **Purchase Ticket**\n\n` +
@@ -203,7 +210,6 @@ module.exports = {
   },
 };
 
-// ✅ helper
 function chunkLines(lines, maxLength) {
   const chunks = [];
   let current = '';
