@@ -10,7 +10,7 @@ const {
 const {
   completePurchase,
   getBasket,
-  getBasketTotal, // ✅ NEW
+  getBasketTotal,
 } = require('../../utils/shopDatabase');
 
 const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
@@ -21,7 +21,8 @@ module.exports = {
     .setDescription('Create a purchase ticket with the codes in your basket.'),
 
   async execute(interaction) {
-    const basket = getBasket(interaction.user.id);
+    // ✅ FIX: await DB
+    const basket = await getBasket(interaction.user.id);
 
     if (basket.length === 0) {
       await interaction.reply({
@@ -31,10 +32,10 @@ module.exports = {
       return;
     }
 
-    // ✅ CALCULATE TOTAL BEFORE PURCHASE
-    const total = getBasketTotal(interaction.user.id);
+    // ✅ FIX: await + format
+    const total = await getBasketTotal(interaction.user.id);
 
-    // ✅ GROUP ITEMS (clean output)
+    // ✅ GROUP ITEMS
     const grouped = {};
 
     for (const item of basket) {
@@ -49,7 +50,8 @@ module.exports = {
     }
 
     const summaryLines = Object.entries(grouped).map(([name, data]) => {
-      return `**${name}** x${data.quantity} - £${data.price * data.quantity}`;
+      const itemTotal = data.price * data.quantity;
+      return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
     });
 
     await interaction.deferReply({ ephemeral: true });
@@ -92,12 +94,15 @@ module.exports = {
       ],
     });
 
-    // ✅ COMPLETE PURCHASE AFTER CALCULATIONS
-    const purchasedItems = completePurchase(interaction.user.id);
+    // ✅ FIX: await DB
+    const purchasedItems = await completePurchase(interaction.user.id);
 
     const itemLines = purchasedItems.map(
       (item) =>
-        `**${item.productName}**\nItem Image: ${item.imageUrl || 'None'}\nCode: \`${item.code}\``
+        `**${item.productName}**\n` +
+        `💰 £${(item.price || 0).toFixed(2)}\n` +
+        `Code: \`${item.code}\`\n` +
+        `Image: ${item.imageUrl || 'None'}`
     );
 
     const chunks = chunkLines(itemLines, 1800);
@@ -113,14 +118,14 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
     );
 
-    // ✅ SEND SUMMARY WITH TOTAL
+    // ✅ CLEAN SUMMARY MESSAGE
     await ticketChannel.send({
       content:
         `🧾 **Purchase Ticket**\n\n` +
         `👤 Customer: <@${interaction.user.id}>\n\n` +
         `🛒 **Order Summary:**\n` +
         `${summaryLines.join('\n')}\n\n` +
-        `💰 **Total: £${total}**\n\n` +
+        `💰 **Total: £${total.toFixed(2)}**\n\n` +
         `---\n📦 **Delivered Codes Below:**`,
     });
 
@@ -170,8 +175,8 @@ module.exports = {
       }
 
       const updatedTopic = `${channel.topic || 'Purchase ticket'} | Claimed by: ${interaction.user.tag} (${interaction.user.id})`;
-      let updatedName = channel.name;
 
+      let updatedName = channel.name;
       if (!updatedName.startsWith('claimed-')) {
         updatedName = `claimed-${updatedName}`.slice(0, 100);
       }
@@ -208,7 +213,6 @@ function chunkLines(lines, maxLength) {
       if (currentChunk) {
         chunks.push(currentChunk);
       }
-
       currentChunk = line;
       continue;
     }
