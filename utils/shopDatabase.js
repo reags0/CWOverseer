@@ -48,14 +48,19 @@ function createItemId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function addCode(productName, code, addedBy, oneTime = false, imageUrl = null) {
+//
+// ✅ UPDATED: add price support
+//
+function addCode(productName, code, addedBy, oneTime = false, imageUrl = null, price = 0) {
   const data = readDatabase();
+
   const item = {
     id: createItemId(),
     productName,
     productKey: normalizeProductName(productName),
     code,
     imageUrl,
+    price, // ✅ NEW
     oneTime,
     status: 'available',
     addedBy,
@@ -136,6 +141,7 @@ function getProductSummary(productName) {
 function getCodes(productName) {
   const data = readDatabase();
   const reservationCounts = getReservationCounts(data);
+
   const items = productName
     ? data.items.filter(
         (item) => item.productKey === normalizeProductName(productName)
@@ -152,11 +158,10 @@ function getCodes(productName) {
         : reservationCounts[item.id] || 0,
     }))
     .sort((a, b) => {
-    if (a.productName === b.productName) {
-      return a.addedAt.localeCompare(b.addedAt);
-    }
-
-    return a.productName.localeCompare(b.productName);
+      if (a.productName === b.productName) {
+        return a.addedAt.localeCompare(b.addedAt);
+      }
+      return a.productName.localeCompare(b.productName);
     });
 }
 
@@ -187,21 +192,15 @@ function addToBasket(userId, code) {
   const trimmedCode = code.trim();
   const item = data.items.find((entry) => entry.code === trimmedCode);
 
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
 
-  if (item.oneTime && item.status !== 'available') {
-    return false;
-  }
+  if (item.oneTime && item.status !== 'available') return false;
 
   if (!data.baskets[userId]) {
     data.baskets[userId] = [];
   }
 
-  if (data.baskets[userId].includes(item.id)) {
-    return 'duplicate';
-  }
+  if (data.baskets[userId].includes(item.id)) return 'duplicate';
 
   if (item.oneTime) {
     item.status = 'reserved';
@@ -211,7 +210,8 @@ function addToBasket(userId, code) {
 
   data.baskets[userId].push(item.id);
   writeDatabase(data);
-  return item;
+
+  return item; // ✅ includes price automatically now
 }
 
 function getBasket(userId) {
@@ -223,18 +223,26 @@ function getBasket(userId) {
     .filter(Boolean);
 }
 
+//
+// ✅ NEW: total calculator
+//
+function getBasketTotal(userId) {
+  const basket = getBasket(userId);
+  return basket.reduce((total, item) => total + (item.price || 0), 0);
+}
+
 function removeFromBasket(userId, itemId) {
   const data = readDatabase();
   const basketItemIds = data.baskets[userId] || [];
+
   const directMatch = data.items.find((entry) => entry.id === itemId);
   const codeMatch = data.items.find(
     (entry) => basketItemIds.includes(entry.id) && entry.code === itemId.trim()
   );
+
   const targetItem = directMatch || codeMatch;
 
-  if (!targetItem || !basketItemIds.includes(targetItem.id)) {
-    return null;
-  }
+  if (!targetItem || !basketItemIds.includes(targetItem.id)) return null;
 
   data.baskets[userId] = basketItemIds.filter((id) => id !== targetItem.id);
 
@@ -262,32 +270,18 @@ function completePurchase(userId) {
   const data = readDatabase();
   const basketItemIds = data.baskets[userId] || [];
 
-  if (basketItemIds.length === 0) {
-    return [];
-  }
+  if (basketItemIds.length === 0) return [];
 
   const purchasedItems = [];
 
   for (const itemId of basketItemIds) {
     const item = data.items.find((entry) => entry.id === itemId);
-
-    if (!item) {
-      continue;
-    }
-
-    item.purchasedBy = userId;
-    item.purchasedAt = new Date().toISOString();
-    item.reservedBy = null;
-    item.reservedAt = null;
+    if (!item) continue;
 
     if (item.oneTime) {
       item.status = 'purchased';
       item.purchasedBy = userId;
       item.purchasedAt = new Date().toISOString();
-    } else {
-      item.status = 'available';
-      item.purchasedBy = null;
-      item.purchasedAt = null;
     }
 
     purchasedItems.push(item);
@@ -295,6 +289,7 @@ function completePurchase(userId) {
 
   delete data.baskets[userId];
   writeDatabase(data);
+
   return purchasedItems;
 }
 
@@ -305,6 +300,7 @@ module.exports = {
   completePurchase,
   deleteCode,
   getBasket,
+  getBasketTotal, // ✅ export this
   getCodes,
   getProductSummary,
   getStockSummary,
