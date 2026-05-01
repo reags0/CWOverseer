@@ -26,6 +26,7 @@ function getCommandFiles(directory) {
 function getCommands() {
   const commandFiles = getCommandFiles(commandsPath);
   const commands = [];
+  const seenCommandNames = new Map();
 
   for (const filePath of commandFiles) {
     const command = require(filePath);
@@ -35,6 +36,17 @@ function getCommands() {
       continue;
     }
 
+    const commandName = command.data.name;
+    const existingPath = seenCommandNames.get(commandName);
+
+    if (existingPath) {
+      throw new Error(
+        `Duplicate slash command name "${commandName}" found in ${existingPath} and ${filePath}. ` +
+          'Command names must be unique before the bot can start or deploy commands.'
+      );
+    }
+
+    seenCommandNames.set(commandName, filePath);
     commands.push(command);
   }
 

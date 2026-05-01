@@ -1,233 +1,246 @@
-console.log('✅ NEW PURCHASE FILE LOADED');
-
+const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelType,
-  PermissionFlagsBits,
-  SlashCommandBuilder,
-} = require('discord.js');
-
-const {
-  completePurchase,
-  getBasket,
-  getBasketTotal,
+  addCode,
+  deleteCode,
+  getCodes,
+  getProductSummary,
+  getStockSummary,
 } = require('../../utils/shopDatabase');
-
-const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('purchase')
-    .setDescription('Create a purchase ticket with the codes in your basket.'),
+    .setName('shopadmin')
+    .setDescription('Manage shop stock codes.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('addcode')
+        .setDescription('Add a stock code to the shop database.')
+        .addStringOption((option) =>
+          option
+            .setName('product')
+            .setDescription('The product name for this code')
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('code')
+            .setDescription('The stock code to store')
+            .setRequired(true)
+        )
+        .addAttachmentOption((option) =>
+          option
+            .setName('image')
+            .setDescription('Optional image for this code')
+            .setRequired(false)
+        )
+        .addNumberOption((option) =>
+          option
+            .setName('price')
+            .setDescription('Optional GBP price for this code')
+            .setRequired(false)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName('robux_price')
+            .setDescription('Optional Robux price for this code')
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName('one_time')
+            .setDescription('Whether this code should be consumed after purchase')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('stock')
+        .setDescription('View stock for one product or all products.')
+        .addStringOption((option) =>
+          option
+            .setName('product')
+            .setDescription('Optional product name')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('viewcodes')
+        .setDescription('View the actual stored codes for admins only.')
+        .addStringOption((option) =>
+          option
+            .setName('product')
+            .setDescription('Optional product name to filter by')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('deletecode')
+        .setDescription('Delete one stored code by its item id.')
+        .addStringOption((option) =>
+          option
+            .setName('item_id')
+            .setDescription('The item id shown in viewcodes')
+            .setRequired(true)
+        )
+    ),
 
   async execute(interaction) {
-    const basket = await getBasket(interaction.user.id);
+    const subcommand = interaction.options.getSubcommand();
 
-    if (!basket || basket.length === 0) {
-      return interaction.reply({
-        content: 'Your basket is empty, so there is nothing to purchase.',
+    if (subcommand === 'addcode') {
+      const productName = interaction.options.getString('product');
+      const code = interaction.options.getString('code');
+      const image = interaction.options.getAttachment('image');
+      const price = interaction.options.getNumber('price') || 0;
+      const robuxPrice = interaction.options.getInteger('robux_price');
+      const oneTime = interaction.options.getBoolean('one_time') || false;
+
+      const item = await addCode(
+        productName,
+        code,
+        interaction.user.id,
+        oneTime,
+        image?.url || null,
+        price,
+        robuxPrice
+      );
+
+      await interaction.reply({
+        content:
+          `Stored a new ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}** ` +
+          `with item id \`${item.id}\`.` +
+          `\nPrice: GBP ${Number(item.price || 0).toFixed(2)}` +
+          (item.robuxPrice ? `\nRobux: ${item.robuxPrice}` : '') +
+          `\nItem Image: ${item.imageUrl || 'None'}`,
         ephemeral: true,
       });
+      return;
     }
 
-    const total = await getBasketTotal(interaction.user.id);
+    if (subcommand === 'stock') {
+      const productName = interaction.options.getString('product');
 
-    // =========================
-    // ✅ FIXED GROUPING BLOCK
-    // =========================
-    const grouped = {};
+      if (productName) {
+        const summary = await getProductSummary(productName);
 
-    for (const item of basket) {
-      const name = item.productName || item.product_name || 'Unknown';
-
-      if (!grouped[name]) {
-        grouped[name] = {
-          quantity: 0,
-          price: item.price || 0,
-        };
+        await interaction.reply({
+          content:
+            `**${summary.productName}** stock\n` +
+            `Total codes: ${summary.total}\n` +
+            `Available: ${summary.available}\n` +
+            `Reserved in baskets: ${summary.reserved}\n` +
+            `Reusable codes: ${summary.reusable}\n` +
+            `One-time codes: ${summary.oneTime}`,
+          ephemeral: true,
+        });
+        return;
       }
 
-      grouped[name].quantity += 1;
-    }
+      const stock = await getStockSummary();
 
-    // =========================
-    // ✅ SAFE SUMMARY (NO ARROW / TEMPLATE ISSUES)
-    // =========================
-    const summaryLines = Object.entries(grouped).map(function (entry) {
-      const name = entry[0];
-      const data = entry[1];
+      if (stock.length === 0) {
+        await interaction.reply({
+          content: 'The shop database is empty right now.',
+          ephemeral: true,
+        });
+        return;
+      }
 
-      const itemTotal = (data.price || 0) * data.quantity;
-
-      return '**' + name + '** x' + data.quantity + ' - £' + itemTotal.toFixed(2);
-    });
-
-    await interaction.deferReply({ ephemeral: true });
-
-    const guild = interaction.guild;
-
-    const safeName = interaction.user.username
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 70) || 'customer';
-
-    const ticketChannel = await guild.channels.create({
-      name: `purchase-${safeName}`,
-      type: ChannelType.GuildText,
-      parent:
-        process.env.PURCHASE_CATEGORY_ID ||
-        DEFAULT_PURCHASE_CATEGORY_ID,
-      topic: `Purchase ticket for ${interaction.user.tag} (${interaction.user.id})`,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
-        {
-          id: interaction.user.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-          ],
-        },
-        {
-          id: interaction.client.user.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ManageChannels,
-            PermissionFlagsBits.ReadMessageHistory,
-          ],
-        },
-      ],
-    });
-
-    const purchasedItems = await completePurchase(interaction.user.id);
-
-    const itemLines = purchasedItems.map((item) => {
-      const name = item.productName || item.product_name || 'Unknown';
-
-      return (
-        `**${name}**\n` +
-        `💰 £${(item.price || 0).toFixed(2)}\n` +
-        `Code: \`${item.code}\`\n` +
-        `Image: ${item.imageUrl || 'None'}`
+      const lines = stock.map(
+        (entry) =>
+          `**${entry.productName}**: ${entry.available} available, ${entry.reserved} reserved, ` +
+          `${entry.reusable} reusable, ${entry.oneTime} one-time`
       );
-    });
 
-    const chunks = chunkLines(itemLines, 1800);
-
-    const controls = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`purchase:claim:${interaction.user.id}`)
-        .setLabel('Claim Ticket')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`purchase:close:${interaction.user.id}`)
-        .setLabel('Close Ticket')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    await ticketChannel.send({
-      content:
-        `🧾 **Purchase Ticket**\n\n` +
-        `👤 Customer: <@${interaction.user.id}>\n\n` +
-        `🛒 **Order Summary:**\n` +
-        `${summaryLines.join('\n')}\n\n` +
-        `💰 **Total: £${total.toFixed(2)}**\n\n` +
-        `---\n📦 **Delivered Codes Below:**`,
-    });
-
-    await ticketChannel.send({
-      content: 'Staff controls for this ticket:',
-      components: [controls],
-    });
-
-    for (const chunk of chunks) {
-      await ticketChannel.send(chunk);
-    }
-
-    await interaction.editReply({
-      content: `Purchase ticket created successfully: ${ticketChannel}`,
-    });
-  },
-
-  async handleButton(interaction) {
-    if (!interaction.inGuild()) {
-      return interaction.reply({
-        content: 'This button can only be used inside a server ticket channel.',
+      await interaction.reply({
+        content: lines.join('\n'),
         ephemeral: true,
       });
+      return;
     }
 
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
-      return interaction.reply({
-        content: 'Only staff members can use ticket controls.',
+    if (subcommand === 'viewcodes') {
+      const productName = interaction.options.getString('product');
+      const codes = await getCodes(productName);
+
+      if (codes.length === 0) {
+        await interaction.reply({
+          content: productName
+            ? `No stored codes were found for **${productName}**.`
+            : 'No stored codes were found.',
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const lines = codes.map((item) => {
+        const name = item.product_name || item.productName;
+        const imageUrl = item.image_url || item.imageUrl || 'None';
+
+        return (
+          `**${name}** | \`${item.id}\` | \`${item.code}\` | ${item.status} | ` +
+          `${item.one_time ? 'one-time' : 'reusable'} | baskets: ${item.basketReservations} | ` +
+          `image: ${imageUrl}`
+        );
+      });
+
+      const chunks = [];
+      let currentChunk = '';
+
+      for (const line of lines) {
+        const candidate = currentChunk ? `${currentChunk}\n${line}` : line;
+
+        if (candidate.length > 1900) {
+          chunks.push(currentChunk);
+          currentChunk = line;
+          continue;
+        }
+
+        currentChunk = candidate;
+      }
+
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+
+      await interaction.reply({
+        content: chunks[0],
         ephemeral: true,
       });
-    }
 
-    const [, action] = interaction.customId.split(':');
-    const channel = interaction.channel;
-
-    if (action === 'claim') {
-      if (channel.topic?.includes('Claimed by:')) {
-        return interaction.reply({
-          content: `This ticket is already claimed.\n${channel.topic}`,
+      for (let index = 1; index < chunks.length; index += 1) {
+        await interaction.followUp({
+          content: chunks[index],
           ephemeral: true,
         });
       }
 
-      const updatedTopic =
-        `${channel.topic || 'Purchase ticket'} | Claimed by: ` +
-        `${interaction.user.tag} (${interaction.user.id})`;
-
-      let updatedName = channel.name;
-      if (!updatedName.startsWith('claimed-')) {
-        updatedName = `claimed-${updatedName}`.slice(0, 100);
-      }
-
-      await channel.edit({
-        name: updatedName,
-        topic: updatedTopic,
-      });
-
-      return interaction.reply({
-        content: `${interaction.user} claimed this ticket.`,
-      });
+      return;
     }
 
-    if (action === 'close') {
-      await interaction.reply({
-        content: `Closing ticket by request of ${interaction.user}...`,
-      });
+    if (subcommand === 'deletecode') {
+      const itemId = interaction.options.getString('item_id');
+      const removedItem = await deleteCode(itemId);
 
-      await channel.delete('Purchase ticket closed by staff');
+      if (!removedItem) {
+        await interaction.reply({
+          content: `No stored code was found with item id \`${itemId}\`.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const productName = removedItem.product_name || removedItem.productName;
+
+      await interaction.reply({
+        content:
+          `Deleted stored code \`${removedItem.id}\` for **${productName}**.` +
+          `\nRemoved code: \`${removedItem.code}\``,
+        ephemeral: true,
+      });
     }
   },
 };
-
-function chunkLines(lines, maxLength) {
-  const chunks = [];
-  let current = '';
-
-  for (const line of lines) {
-    const next = current ? `${current}\n\n${line}` : line;
-
-    if (next.length > maxLength) {
-      if (current) chunks.push(current);
-      current = line;
-    } else {
-      current = next;
-    }
-  }
-
-  if (current) chunks.push(current);
-
-  return chunks;
-}

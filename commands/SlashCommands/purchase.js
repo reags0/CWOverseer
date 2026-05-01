@@ -32,7 +32,6 @@ module.exports = {
 
     const total = await getBasketTotal(interaction.user.id);
 
-    // Group items
     const grouped = {};
 
     for (const item of basket) {
@@ -50,7 +49,7 @@ module.exports = {
 
     const summaryLines = Object.entries(grouped).map(([name, data]) => {
       const itemTotal = data.price * data.quantity;
-      return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
+      return `**${name}** x${data.quantity} - GBP ${itemTotal.toFixed(2)}`;
     });
 
     await interaction.deferReply({ ephemeral: true });
@@ -68,9 +67,7 @@ module.exports = {
     const ticketChannel = await guild.channels.create({
       name: `purchase-${safeName}`,
       type: ChannelType.GuildText,
-      parent:
-        process.env.PURCHASE_CATEGORY_ID ||
-        DEFAULT_PURCHASE_CATEGORY_ID,
+      parent: process.env.PURCHASE_CATEGORY_ID || DEFAULT_PURCHASE_CATEGORY_ID,
       topic: `Purchase ticket for ${interaction.user.tag} (${interaction.user.id})`,
       permissionOverwrites: [
         {
@@ -104,10 +101,10 @@ module.exports = {
 
       return [
         `**${name}**`,
-        `💰 £${Number(item.price || 0).toFixed(2)}`,
-        item.robux_price ? `🟩 ${item.robux_price} Robux` : null,
+        `Price: GBP ${Number(item.price || 0).toFixed(2)}`,
+        item.robux_price ? `Robux: ${item.robux_price}` : null,
         `Code: \`${item.code}\``,
-        `Image: ${item.image_url || item.imageUrl || 'None'}`
+        `Image: ${item.image_url || item.imageUrl || 'None'}`,
       ]
         .filter(Boolean)
         .join('\n');
@@ -128,13 +125,13 @@ module.exports = {
 
     await ticketChannel.send({
       content:
-        `🧾 **Purchase Ticket**\n\n` +
-        `👤 Customer: <@${interaction.user.id}>\n\n` +
-        `🛒 **Order Summary:**\n` +
+        `Purchase Ticket\n\n` +
+        `Customer: <@${interaction.user.id}>\n\n` +
+        `Order Summary:\n` +
         `${summaryLines.join('\n')}\n\n` +
-        `💰 **Total: £${Number(total.gbp || 0).toFixed(2)}**` +
-        (total.robux ? `\n🟩 **Robux Total: ${total.robux}**` : '') +
-        `\n\n---\n📦 **Delivered Codes Below:**`,
+        `Total: GBP ${Number(total.gbp || 0).toFixed(2)}` +
+        (total.robux ? `\nRobux Total: ${total.robux}` : '') +
+        `\n\n---\nDelivered Codes Below:`,
     });
 
     await ticketChannel.send({
@@ -159,11 +156,7 @@ module.exports = {
       });
     }
 
-    if (
-      !interaction.memberPermissions.has(
-        PermissionFlagsBits.ManageChannels
-      )
-    ) {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
       return interaction.reply({
         content: 'Only staff can use ticket controls.',
         ephemeral: true,
@@ -197,7 +190,7 @@ module.exports = {
 
     if (action === 'close') {
       await interaction.reply({
-        content: `Closing ticket...`,
+        content: 'Closing ticket...',
       });
 
       await channel.delete();
