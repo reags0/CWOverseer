@@ -33,7 +33,7 @@ client.on('messageCreate', async (message) => {
       await message.delete().catch(() => {});
 
       await message.channel.send(
-        'https://www.image2url.com/r2/default/gifs/1777641980064-d7778812-bd9e-40ea-9e38-d0048c3ad964.gif'
+        'https://cdn.corenexis.com/files/c/7884756720.png'
       );
     } catch (err) {
       console.error('Error in +line command:', err);
