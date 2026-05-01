@@ -78,6 +78,7 @@ module.exports = {
       await interaction.reply({
         content:
           `Added **${item.productName}** to your basket.\n` +
+          `Price: £${item.price || 0}\n` +
           `Item Image: ${item.imageUrl || 'None'}\n` +
           `Code: \`${item.code}\``,
         ephemeral: true,
@@ -96,13 +97,24 @@ module.exports = {
         return;
       }
 
-      const lines = basket.map(
-        (item) =>
-          `**${item.productName}**\nItem Image: ${item.imageUrl || 'None'}\nCode: \`${item.code}\``
-      );
+      let total = 0;
+
+      const lines = basket.map((item) => {
+        const price = item.price || 0;
+        total += price;
+
+        return (
+          `**${item.productName}**\n` +
+          `Price: £${price}\n` +
+          `Item Image: ${item.imageUrl || 'None'}\n` +
+          `Code: \`${item.code}\``
+        );
+      });
 
       await interaction.reply({
-        content: lines.join('\n\n'),
+        content:
+          lines.join('\n\n') +
+          `\n\n💰 **Total: £${total}**`,
         ephemeral: true,
       });
       return;
