@@ -49,9 +49,17 @@ function createItemId() {
 }
 
 //
-// ✅ UPDATED: add price support
+// ✅ UPDATED: add GBP + ROBUX support
 //
-function addCode(productName, code, addedBy, oneTime = false, imageUrl = null, price = 0) {
+function addCode(
+  productName,
+  code,
+  addedBy,
+  oneTime = false,
+  imageUrl = null,
+  price = 0,
+  robuxPrice = null
+) {
   const data = readDatabase();
 
   const item = {
@@ -60,7 +68,8 @@ function addCode(productName, code, addedBy, oneTime = false, imageUrl = null, p
     productKey: normalizeProductName(productName),
     code,
     imageUrl,
-    price, // ✅ NEW
+    price: price || 0,              // £
+    robuxPrice: robuxPrice ?? null, // Robux (optional)
     oneTime,
     status: 'available',
     addedBy,
@@ -169,9 +178,7 @@ function deleteCode(itemId) {
   const data = readDatabase();
   const itemIndex = data.items.findIndex((item) => item.id === itemId);
 
-  if (itemIndex === -1) {
-    return null;
-  }
+  if (itemIndex === -1) return null;
 
   const [removedItem] = data.items.splice(itemIndex, 1);
 
@@ -193,7 +200,6 @@ function addToBasket(userId, code) {
   const item = data.items.find((entry) => entry.code === trimmedCode);
 
   if (!item) return null;
-
   if (item.oneTime && item.status !== 'available') return false;
 
   if (!data.baskets[userId]) {
@@ -211,7 +217,7 @@ function addToBasket(userId, code) {
   data.baskets[userId].push(item.id);
   writeDatabase(data);
 
-  return item; // ✅ includes price automatically now
+  return item;
 }
 
 function getBasket(userId) {
@@ -224,11 +230,23 @@ function getBasket(userId) {
 }
 
 //
-// ✅ NEW: total calculator
+// ✅ UPDATED: dual currency totals
 //
 function getBasketTotal(userId) {
   const basket = getBasket(userId);
-  return basket.reduce((total, item) => total + (item.price || 0), 0);
+
+  let totalGBP = 0;
+  let totalRobux = 0;
+
+  for (const item of basket) {
+    totalGBP += item.price || 0;
+    totalRobux += item.robuxPrice || 0;
+  }
+
+  return {
+    gbp: totalGBP,
+    robux: totalRobux,
+  };
 }
 
 function removeFromBasket(userId, itemId) {
@@ -300,7 +318,7 @@ module.exports = {
   completePurchase,
   deleteCode,
   getBasket,
-  getBasketTotal, // ✅ export this
+  getBasketTotal,
   getCodes,
   getProductSummary,
   getStockSummary,
