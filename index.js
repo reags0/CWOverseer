@@ -3,6 +3,12 @@ const path = require('path');
 const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const { loadCommands } = require('./handlers/loadCommands');
 const { ensureShopSchema } = require('./utils/initDatabase');
+const {
+  handleGuildMemberAdd,
+  handleInviteCreate,
+  handleInviteDelete,
+  initializeInviteTracking,
+} = require('./utils/inviteTracker');
 
 loadEnv();
 
@@ -18,11 +24,25 @@ const client = new Client({
 client.commands = new Collection();
 client.embedBuilderSessions = new Collection();
 client.ticketPanelSessions = new Collection();
+client.inviteCache = new Collection();
+client.inviteCounts = new Collection();
 
 loadCommands(client);
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on('inviteCreate', async (invite) => {
+  await handleInviteCreate(invite, client);
+});
+
+client.on('inviteDelete', (invite) => {
+  handleInviteDelete(invite, client);
+});
+
+client.on('guildMemberAdd', async (member) => {
+  await handleGuildMemberAdd(member, client);
 });
 
 
@@ -122,6 +142,7 @@ async function startBot() {
   }
 
   await client.login(token);
+  await initializeInviteTracking(client);
 }
 
 function loadEnv() {
