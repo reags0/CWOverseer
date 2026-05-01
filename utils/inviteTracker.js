@@ -1,3 +1,8 @@
+const fs = require('fs');
+const path = require('path');
+
+const joinedUsersPath = path.join(__dirname, '..', 'data', 'joined-users.json');
+
 async function initializeInviteTracking(client) {
   if (!client.inviteCache) {
     client.inviteCache = new Map();
@@ -5,6 +10,10 @@ async function initializeInviteTracking(client) {
 
   if (!client.inviteCounts) {
     client.inviteCounts = new Map();
+  }
+
+  if (!client.joinedUsers) {
+    client.joinedUsers = loadJoinedUsers();
   }
 
   for (const guild of client.guilds.cache.values()) {
@@ -74,6 +83,9 @@ function handleInviteDelete(invite, client) {
 
 async function handleGuildMemberAdd(member, client) {
   try {
+    const isRejoin = hasJoinedBefore(client, member.guild.id, member.user.id);
+    markJoined(client, member.guild.id, member.user.id);
+
     const previousInvites = client.inviteCache.get(member.guild.id) || new Map();
     const currentInvites = await member.guild.invites.fetch();
     let usedInvite = null;
@@ -91,10 +103,20 @@ async function handleGuildMemberAdd(member, client) {
 
     await refreshGuildInvites(member.guild, client);
 
+    if (isRejoin) {
+      return {
+        inviteCount: 0,
+        inviterId: null,
+        isRejoin: true,
+        usedInviteCode: usedInvite?.code || null,
+      };
+    }
+
     if (!usedInvite || !(usedInvite.inviterId || usedInvite.inviter?.id)) {
       return {
         inviteCount: 0,
         inviterId: null,
+        isRejoin: false,
         usedInviteCode: null,
       };
     }
@@ -105,6 +127,7 @@ async function handleGuildMemberAdd(member, client) {
     return {
       inviteCount,
       inviterId,
+      isRejoin: false,
       usedInviteCode: usedInvite.code,
     };
   } catch (error) {
@@ -112,6 +135,7 @@ async function handleGuildMemberAdd(member, client) {
     return {
       inviteCount: 0,
       inviterId: null,
+      isRejoin: false,
       usedInviteCode: null,
     };
   }
@@ -125,6 +149,45 @@ function getInviteCount(client, guildId, userId) {
   }
 
   return guildInviteCounts.get(userId) || 0;
+}
+
+function loadJoinedUsers() {
+  try {
+    if (!fs.existsSync(joinedUsersPath)) {
+      return {};
+    }
+
+    return JSON.parse(fs.readFileSync(joinedUsersPath, 'utf8'));
+  } catch (error) {
+    console.error('Failed to load joined users data:', error);
+    return {};
+  }
+}
+
+function saveJoinedUsers(joinedUsers) {
+  try {
+    fs.mkdirSync(path.dirname(joinedUsersPath), { recursive: true });
+    fs.writeFileSync(joinedUsersPath, JSON.stringify(joinedUsers, null, 2));
+  } catch (error) {
+    console.error('Failed to save joined users data:', error);
+  }
+}
+
+function hasJoinedBefore(client, guildId, userId) {
+  return Boolean(client.joinedUsers?.[guildId]?.[userId]);
+}
+
+function markJoined(client, guildId, userId) {
+  if (!client.joinedUsers) {
+    client.joinedUsers = {};
+  }
+
+  if (!client.joinedUsers[guildId]) {
+    client.joinedUsers[guildId] = {};
+  }
+
+  client.joinedUsers[guildId][userId] = true;
+  saveJoinedUsers(client.joinedUsers);
 }
 
 module.exports = {

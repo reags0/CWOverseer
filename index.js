@@ -203,7 +203,12 @@ async function sendWelcomeMessage(member, inviteData) {
     .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
     .setTimestamp();
 
-  if (inviteData?.inviterId) {
+  if (inviteData?.isRejoin) {
+    embed.addFields({
+      name: 'Member Status',
+      value: 'Welcome back! This rejoin was not counted toward invite totals.',
+    });
+  } else if (inviteData?.inviterId) {
     embed.addFields(
       { name: 'Invited By', value: `<@${inviteData.inviterId}>`, inline: true },
       {
