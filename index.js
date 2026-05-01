@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const { loadCommands } = require('./handlers/loadCommands');
+const { ensureShopSchema } = require('./utils/initDatabase');
 
 loadEnv();
 
@@ -106,7 +107,21 @@ if (!token) {
   process.exit(1);
 }
 
-client.login(token);
+startBot();
+
+async function startBot() {
+  try {
+    await ensureShopSchema();
+    console.log('Database schema is ready.');
+  } catch (error) {
+    console.error('Failed to initialize database schema:', error);
+    console.error(
+      'The bot will still try to come online, but database-backed commands may fail until DATABASE_URL is fixed.'
+    );
+  }
+
+  await client.login(token);
+}
 
 function loadEnv() {
   const envPath = path.join(__dirname, '.env');

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "deploy": "node deploy-commands.js",
+    "db:init": "node init-database.js",
     "refresh": "node deploy-commands.js",
     "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
