@@ -4,6 +4,7 @@ const {
   ChannelType,
   Client,
   Collection,
+  EmbedBuilder,
   GatewayIntentBits,
   PermissionFlagsBits,
 } = require('discord.js');
@@ -15,6 +16,8 @@ const {
   handleInviteDelete,
   initializeInviteTracking,
 } = require('./utils/inviteTracker');
+
+const WELCOME_CHANNEL_ID = '1499542330682900607';
 
 loadEnv();
 
@@ -191,21 +194,34 @@ async function sendWelcomeMessage(member, inviteData) {
     return;
   }
 
-  let content = `Welcome to **${member.guild.name}**, ${member}!`;
+  const embed = new EmbedBuilder()
+    .setColor('#2B8CFF')
+    .setTitle('Welcome!')
+    .setDescription(`Welcome to **${member.guild.name}**, ${member}!`)
+    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+    .setTimestamp();
 
   if (inviteData?.inviterId) {
-    content +=
-      `\nInvited by: <@${inviteData.inviterId}>` +
-      `\nThey now have **${inviteData.inviteCount}** invite(s).`;
+    embed.addFields(
+      { name: 'Invited By', value: `<@${inviteData.inviterId}>`, inline: true },
+      {
+        name: 'Invite Count',
+        value: `**${inviteData.inviteCount}** invite(s)`,
+        inline: true,
+      }
+    );
   } else {
-    content += '\nI could not determine which invite was used.';
+    embed.addFields({
+      name: 'Invited By',
+      value: 'I could not determine which invite was used.',
+    });
   }
 
-  await welcomeChannel.send({ content });
+  await welcomeChannel.send({ embeds: [embed] });
 }
 
 function resolveWelcomeChannel(guild) {
-  const configuredChannelId = process.env.WELCOME_CHANNEL_ID;
+  const configuredChannelId = WELCOME_CHANNEL_ID || process.env.WELCOME_CHANNEL_ID;
 
   if (configuredChannelId) {
     const configuredChannel = guild.channels.cache.get(configuredChannelId);
