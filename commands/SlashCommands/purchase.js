@@ -6,7 +6,12 @@ const {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } = require('discord.js');
-const { completePurchase, getBasket } = require('../../utils/shopDatabase');
+
+const {
+  completePurchase,
+  getBasket,
+  getBasketTotal, // ✅ NEW
+} = require('../../utils/shopDatabase');
 
 const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
 
@@ -25,6 +30,27 @@ module.exports = {
       });
       return;
     }
+
+    // ✅ CALCULATE TOTAL BEFORE PURCHASE
+    const total = getBasketTotal(interaction.user.id);
+
+    // ✅ GROUP ITEMS (clean output)
+    const grouped = {};
+
+    for (const item of basket) {
+      if (!grouped[item.productName]) {
+        grouped[item.productName] = {
+          quantity: 0,
+          price: item.price || 0,
+        };
+      }
+
+      grouped[item.productName].quantity += 1;
+    }
+
+    const summaryLines = Object.entries(grouped).map(([name, data]) => {
+      return `**${name}** x${data.quantity} - £${data.price * data.quantity}`;
+    });
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -66,14 +92,16 @@ module.exports = {
       ],
     });
 
+    // ✅ COMPLETE PURCHASE AFTER CALCULATIONS
     const purchasedItems = completePurchase(interaction.user.id);
 
-    const lines = purchasedItems.map(
+    const itemLines = purchasedItems.map(
       (item) =>
         `**${item.productName}**\nItem Image: ${item.imageUrl || 'None'}\nCode: \`${item.code}\``
     );
 
-    const chunks = chunkLines(lines, 1800);
+    const chunks = chunkLines(itemLines, 1800);
+
     const controls = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`purchase:claim:${interaction.user.id}`)
@@ -85,10 +113,16 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
     );
 
-    await ticketChannel.send(
-      `Purchase ticket for <@${interaction.user.id}>.\n` +
-        `The following basket codes were delivered in this ticket:`
-    );
+    // ✅ SEND SUMMARY WITH TOTAL
+    await ticketChannel.send({
+      content:
+        `🧾 **Purchase Ticket**\n\n` +
+        `👤 Customer: <@${interaction.user.id}>\n\n` +
+        `🛒 **Order Summary:**\n` +
+        `${summaryLines.join('\n')}\n\n` +
+        `💰 **Total: £${total}**\n\n` +
+        `---\n📦 **Delivered Codes Below:**`,
+    });
 
     await ticketChannel.send({
       content: 'Staff controls for this ticket:',
