@@ -1,3 +1,5 @@
+console.log('✅ NEW PURCHASE FILE LOADED');
+
 const {
   ActionRowBuilder,
   ButtonBuilder,
