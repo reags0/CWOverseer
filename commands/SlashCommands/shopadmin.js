@@ -12,6 +12,8 @@ module.exports = {
     .setName('shopadmin')
     .setDescription('Manage shop stock codes.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
+    // ✅ ADDCODE UPDATED
     .addSubcommand((subcommand) =>
       subcommand
         .setName('addcode')
@@ -28,6 +30,12 @@ module.exports = {
             .setDescription('The stock code to store')
             .setRequired(true)
         )
+        .addIntegerOption((option) => // ✅ NEW
+          option
+            .setName('price')
+            .setDescription('Price for this item')
+            .setRequired(true)
+        )
         .addAttachmentOption((option) =>
           option
             .setName('image')
@@ -41,6 +49,7 @@ module.exports = {
             .setRequired(false)
         )
     )
+
     .addSubcommand((subcommand) =>
       subcommand
         .setName('stock')
@@ -52,6 +61,7 @@ module.exports = {
             .setRequired(false)
         )
     )
+
     .addSubcommand((subcommand) =>
       subcommand
         .setName('viewcodes')
@@ -63,6 +73,7 @@ module.exports = {
             .setRequired(false)
         )
     )
+
     .addSubcommand((subcommand) =>
       subcommand
         .setName('deletecode')
@@ -78,9 +89,11 @@ module.exports = {
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
 
+    // ✅ ADDCODE UPDATED
     if (subcommand === 'addcode') {
       const productName = interaction.options.getString('product');
       const code = interaction.options.getString('code');
+      const price = interaction.options.getInteger('price'); // ✅ NEW
       const image = interaction.options.getAttachment('image');
       const oneTime = interaction.options.getBoolean('one_time') || false;
 
@@ -89,13 +102,15 @@ module.exports = {
         code,
         interaction.user.id,
         oneTime,
-        image?.url || null
+        image?.url || null,
+        price // ✅ PASS PRICE
       );
 
       await interaction.reply({
         content:
-          `Stored a new ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}** ` +
-          `with item id \`${item.id}\`.\n` +
+          `Stored a new ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}**\n` +
+          `💰 Price: £${item.price || 0}\n` +
+          `Item ID: \`${item.id}\`\n` +
           `Item Image: ${item.imageUrl || 'None'}`,
         ephemeral: true,
       });
@@ -144,6 +159,7 @@ module.exports = {
       return;
     }
 
+    // ✅ VIEWCODES UPDATED (shows price)
     if (subcommand === 'viewcodes') {
       const productName = interaction.options.getString('product');
       const codes = getCodes(productName);
@@ -160,7 +176,7 @@ module.exports = {
 
       const lines = codes.map(
         (item) =>
-          `**${item.productName}** | \`${item.id}\` | \`${item.code}\` | ${item.status} | ` +
+          `**${item.productName}** | £${item.price || 0} | \`${item.id}\` | \`${item.code}\` | ${item.status} | ` +
           `${item.oneTime ? 'one-time' : 'reusable'} | baskets: ${item.basketReservations} | ` +
           `image: ${item.imageUrl || 'None'}`
       );
