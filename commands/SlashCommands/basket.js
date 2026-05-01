@@ -3,7 +3,7 @@ const {
   addToBasket,
   clearBasket,
   getBasket,
-  getBasketTotal, // ✅ NEW
+  getBasketTotal,
   removeFromBasket,
 } = require('../../utils/shopDatabase');
 
@@ -48,9 +48,10 @@ module.exports = {
     const userId = interaction.user.id;
     const subcommand = interaction.options.getSubcommand();
 
+    // ✅ ADD
     if (subcommand === 'add') {
       const code = interaction.options.getString('code');
-      const item = addToBasket(userId, code);
+      const item = await addToBasket(userId, code); // ✅ await
 
       if (item === 'duplicate') {
         await interaction.reply({
@@ -78,16 +79,17 @@ module.exports = {
 
       await interaction.reply({
         content:
-          `Added **${item.productName}** to your basket.\n` +
-          `💰 Price: £${item.price || 0}\n` +
+          `Added **${item.product_name || item.productName}** to your basket.\n` +
+          `💰 Price: £${(item.price || 0).toFixed(2)}\n` +
           `Code: \`${item.code}\``,
         ephemeral: true,
       });
       return;
     }
 
+    // ✅ VIEW
     if (subcommand === 'view') {
-      const basket = getBasket(userId);
+      const basket = await getBasket(userId); // ✅ await
 
       if (basket.length === 0) {
         await interaction.reply({
@@ -97,45 +99,45 @@ module.exports = {
         return;
       }
 
-      // ✅ GROUP ITEMS (cleaner)
+      // ✅ GROUP ITEMS
       const grouped = {};
 
       for (const item of basket) {
-        const key = item.productName;
+        const name = item.product_name || item.productName;
 
-        if (!grouped[key]) {
-          grouped[key] = {
+        if (!grouped[name]) {
+          grouped[name] = {
             quantity: 0,
             price: item.price || 0,
           };
         }
 
-        grouped[key].quantity += 1;
+        grouped[name].quantity += 1;
       }
 
-      // ✅ BUILD MESSAGE
       const lines = Object.entries(grouped).map(([name, data]) => {
         const total = data.price * data.quantity;
-
-        return `**${name}** x${data.quantity} - £${total}`;
+        return `**${name}** x${data.quantity} - £${total.toFixed(2)}`;
       });
 
-      // ✅ USE CENTRAL TOTAL FUNCTION
-      const total = getBasketTotal(userId);
+      // ✅ GET TOTALS
+      const total = await getBasketTotal(userId); // ✅ await
 
       await interaction.reply({
         content:
           `🛒 **Your Basket**\n\n` +
           lines.join('\n') +
-          `\n\n💰 **Total: £${total}**`,
+          `\n\n💰 **Total: £${total.gbp.toFixed(2)}**` +
+          (total.robux ? `\n🟩 **Robux: ${total.robux}**` : ''),
         ephemeral: true,
       });
       return;
     }
 
+    // ✅ REMOVE
     if (subcommand === 'remove') {
       const code = interaction.options.getString('code');
-      const item = removeFromBasket(userId, code);
+      const item = await removeFromBasket(userId, code); // ✅ await
 
       if (!item) {
         await interaction.reply({
@@ -146,14 +148,15 @@ module.exports = {
       }
 
       await interaction.reply({
-        content: `Removed **${item.productName}** from your basket.`,
+        content: `Removed **${item.product_name || item.productName}** from your basket.`,
         ephemeral: true,
       });
       return;
     }
 
+    // ✅ CLEAR
     if (subcommand === 'clear') {
-      const removedCount = clearBasket(userId);
+      const removedCount = await clearBasket(userId); // ✅ await
 
       await interaction.reply({
         content: `Cleared ${removedCount} item(s) from your basket.`,
