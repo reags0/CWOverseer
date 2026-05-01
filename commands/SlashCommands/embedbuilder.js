@@ -70,6 +70,11 @@ module.exports = {
   },
 
   async handleModalSubmit(interaction) {
+    // ✅ ensure session store exists
+    if (!interaction.client.embedBuilderSessions) {
+      interaction.client.embedBuilderSessions = new Map();
+    }
+
     const title = interaction.fields.getTextInputValue('title').trim();
     const description = interaction.fields
       .getTextInputValue('description')
@@ -96,21 +101,10 @@ module.exports = {
 
     const embed = new EmbedBuilder().setDescription(description);
 
-    if (title) {
-      embed.setTitle(title);
-    }
-
-    if (colorInput) {
-      embed.setColor(normalizeHex(colorInput));
-    }
-
-    if (footer) {
-      embed.setFooter({ text: footer });
-    }
-
-    if (image) {
-      embed.setImage(image);
-    }
+    if (title) embed.setTitle(title);
+    if (colorInput) embed.setColor(normalizeHex(colorInput));
+    if (footer) embed.setFooter({ text: footer });
+    if (image) embed.setImage(image);
 
     const sessionId = crypto.randomBytes(8).toString('hex');
 
@@ -142,12 +136,22 @@ module.exports = {
 
   async handleButton(interaction) {
     const [, action, sessionId] = interaction.customId.split(':');
-    const session = interaction.client.embedBuilderSessions.get(sessionId);
+
+    const sessions = interaction.client.embedBuilderSessions;
+    if (!sessions) {
+      await interaction.reply({
+        content: 'Session system not initialized.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const session = sessions.get(sessionId);
 
     if (!session || Date.now() - session.createdAt > SESSION_TTL_MS) {
-      interaction.client.embedBuilderSessions.delete(sessionId);
+      sessions.delete(sessionId);
       await interaction.update({
-        content: 'This embed session expired. Run `/embedbuilder` to start again.',
+        content: 'This embed session expired. Run `/embedbuilder` again.',
         embeds: [],
         components: [],
       });
@@ -156,14 +160,14 @@ module.exports = {
 
     if (session.userId !== interaction.user.id) {
       await interaction.reply({
-        content: 'Only the person who opened this embed builder can use these buttons.',
+        content: 'Only the creator can use these buttons.',
         ephemeral: true,
       });
       return;
     }
 
     if (action === 'cancel') {
-      interaction.client.embedBuilderSessions.delete(sessionId);
+      sessions.delete(sessionId);
       await interaction.update({
         content: 'Embed builder cancelled.',
         embeds: [],
@@ -173,28 +177,33 @@ module.exports = {
     }
 
     if (action === 'send') {
-      const channel = await interaction.client.channels.fetch(session.channelId);
+      try {
+        const channel = await interaction.client.channels.fetch(session.channelId);
 
-      if (!channel || !channel.isTextBased()) {
-        interaction.client.embedBuilderSessions.delete(sessionId);
+        if (!channel || !channel.isTextBased()) {
+          throw new Error('Invalid channel');
+        }
+
+        await channel.send({
+          embeds: [EmbedBuilder.from(session.embedData)],
+        });
+
+        sessions.delete(sessionId);
+
         await interaction.update({
-          content: 'I could not find a text channel to send the embed to.',
+          content: 'Embed sent successfully.',
           embeds: [],
           components: [],
         });
-        return;
+      } catch (err) {
+        console.error(err);
+
+        await interaction.update({
+          content: 'Failed to send embed.',
+          embeds: [],
+          components: [],
+        });
       }
-
-      await channel.send({
-        embeds: [EmbedBuilder.from(session.embedData)],
-      });
-
-      interaction.client.embedBuilderSessions.delete(sessionId);
-      await interaction.update({
-        content: 'Embed sent successfully.',
-        embeds: [],
-        components: [],
-      });
     }
   },
 };
