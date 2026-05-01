@@ -1,44 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-
-const dataDirectory = path.join(__dirname, '..', 'data');
-const databasePath = path.join(dataDirectory, 'shop.json');
-
-function ensureDatabase() {
-  if (!fs.existsSync(dataDirectory)) {
-    fs.mkdirSync(dataDirectory, { recursive: true });
-  }
-
-  if (!fs.existsSync(databasePath)) {
-    writeDatabase({
-      items: [],
-      baskets: {},
-    });
-  }
-}
-
-function readDatabase() {
-  ensureDatabase();
-  const rawData = fs.readFileSync(databasePath, 'utf8');
-  return JSON.parse(rawData);
-}
-
-function writeDatabase(data) {
-  ensureDatabase();
-  fs.writeFileSync(databasePath, JSON.stringify(data, null, 2));
-}
-
-function getReservationCounts(data) {
-  const counts = {};
-
-  for (const basketItemIds of Object.values(data.baskets)) {
-    for (const itemId of basketItemIds) {
-      counts[itemId] = (counts[itemId] || 0) + 1;
-    }
-  }
-
-  return counts;
-}
+const pool = require('./database');
 
 function normalizeProductName(value) {
   return value.trim().toLowerCase();
@@ -49,278 +9,179 @@ function createItemId() {
 }
 
 //
-// ✅ UPDATED: add GBP + ROBUX support
+// ✅ ADD CODE
 //
-function addCode(
-  productName,
-  code,
-  addedBy,
-  oneTime = false,
-  imageUrl = null,
-  price = 0,
-  robuxPrice = null
-) {
-  const data = readDatabase();
+async function addCode(productName, code, addedBy, oneTime = false, imageUrl = null, price = 0, robuxPrice = null) {
+  const id = createItemId();
 
-  const item = {
-    id: createItemId(),
+  await pool.query(
+    `INSERT INTO items 
+    (id, product_name, product_key, code, image_url, price, robux_price, one_time, status, added_by, added_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'available',$9,NOW())`,
+    [
+      id,
+      productName,
+      normalizeProductName(productName),
+      code,
+      imageUrl,
+      price,
+      robuxPrice,
+      oneTime,
+      addedBy,
+    ]
+  );
+
+  return {
+    id,
     productName,
-    productKey: normalizeProductName(productName),
     code,
     imageUrl,
-    price: price || 0,              // £
-    robuxPrice: robuxPrice ?? null, // Robux (optional)
+    price,
+    robuxPrice,
     oneTime,
-    status: 'available',
-    addedBy,
-    addedAt: new Date().toISOString(),
-    reservedBy: null,
-    reservedAt: null,
-    purchasedBy: null,
-    purchasedAt: null,
   };
-
-  data.items.push(item);
-  writeDatabase(data);
-  return item;
 }
 
-function getStockSummary() {
-  const data = readDatabase();
-  const summary = new Map();
-  const reservationCounts = getReservationCounts(data);
-
-  for (const item of data.items) {
-    const entry =
-      summary.get(item.productKey) ||
-      {
-        productName: item.productName,
-        available: 0,
-        reserved: 0,
-        oneTime: 0,
-        reusable: 0,
-      };
-
-    if (item.status === 'available') {
-      entry.available += 1;
-    }
-
-    const reservedCount = item.oneTime
-      ? item.status === 'reserved'
-        ? 1
-        : 0
-      : reservationCounts[item.id] || 0;
-
-    if (reservedCount > 0) {
-      entry.reserved += 1;
-    }
-
-    if (item.oneTime) {
-      entry.oneTime += 1;
-    } else {
-      entry.reusable += 1;
-    }
-
-    summary.set(item.productKey, entry);
-  }
-
-  return [...summary.values()].sort((a, b) =>
-    a.productName.localeCompare(b.productName)
+//
+// ✅ ADD TO BASKET
+//
+async function addToBasket(userId, code) {
+  const { rows } = await pool.query(
+    `SELECT * FROM items WHERE code = $1`,
+    [code.trim()]
   );
-}
 
-function getProductSummary(productName) {
-  const data = readDatabase();
-  const productKey = normalizeProductName(productName);
-  const items = data.items.filter((item) => item.productKey === productKey);
-  const reservationCounts = getReservationCounts(data);
-
-  return {
-    productName,
-    total: items.length,
-    available: items.filter((item) => item.status === 'available').length,
-    reserved: items.filter((item) =>
-      item.oneTime ? item.status === 'reserved' : (reservationCounts[item.id] || 0) > 0
-    ).length,
-    oneTime: items.filter((item) => item.oneTime).length,
-    reusable: items.filter((item) => !item.oneTime).length,
-  };
-}
-
-function getCodes(productName) {
-  const data = readDatabase();
-  const reservationCounts = getReservationCounts(data);
-
-  const items = productName
-    ? data.items.filter(
-        (item) => item.productKey === normalizeProductName(productName)
-      )
-    : data.items;
-
-  return items
-    .map((item) => ({
-      ...item,
-      basketReservations: item.oneTime
-        ? item.status === 'reserved'
-          ? 1
-          : 0
-        : reservationCounts[item.id] || 0,
-    }))
-    .sort((a, b) => {
-      if (a.productName === b.productName) {
-        return a.addedAt.localeCompare(b.addedAt);
-      }
-      return a.productName.localeCompare(b.productName);
-    });
-}
-
-function deleteCode(itemId) {
-  const data = readDatabase();
-  const itemIndex = data.items.findIndex((item) => item.id === itemId);
-
-  if (itemIndex === -1) return null;
-
-  const [removedItem] = data.items.splice(itemIndex, 1);
-
-  for (const userId of Object.keys(data.baskets)) {
-    data.baskets[userId] = data.baskets[userId].filter((id) => id !== itemId);
-
-    if (data.baskets[userId].length === 0) {
-      delete data.baskets[userId];
-    }
-  }
-
-  writeDatabase(data);
-  return removedItem;
-}
-
-function addToBasket(userId, code) {
-  const data = readDatabase();
-  const trimmedCode = code.trim();
-  const item = data.items.find((entry) => entry.code === trimmedCode);
-
+  const item = rows[0];
   if (!item) return null;
-  if (item.oneTime && item.status !== 'available') return false;
 
-  if (!data.baskets[userId]) {
-    data.baskets[userId] = [];
+  if (item.one_time && item.status !== 'available') return false;
+
+  const existing = await pool.query(
+    `SELECT * FROM baskets WHERE user_id=$1 AND item_id=$2`,
+    [userId, item.id]
+  );
+
+  if (existing.rows.length > 0) return 'duplicate';
+
+  if (item.one_time) {
+    await pool.query(
+      `UPDATE items SET status='reserved', reserved_by=$1, reserved_at=NOW() WHERE id=$2`,
+      [userId, item.id]
+    );
   }
 
-  if (data.baskets[userId].includes(item.id)) return 'duplicate';
-
-  if (item.oneTime) {
-    item.status = 'reserved';
-    item.reservedBy = userId;
-    item.reservedAt = new Date().toISOString();
-  }
-
-  data.baskets[userId].push(item.id);
-  writeDatabase(data);
+  await pool.query(
+    `INSERT INTO baskets (user_id, item_id) VALUES ($1,$2)`,
+    [userId, item.id]
+  );
 
   return item;
 }
 
-function getBasket(userId) {
-  const data = readDatabase();
-  const basketItemIds = data.baskets[userId] || [];
+//
+// ✅ GET BASKET
+//
+async function getBasket(userId) {
+  const { rows } = await pool.query(
+    `SELECT i.* FROM baskets b
+     JOIN items i ON b.item_id = i.id
+     WHERE b.user_id = $1`,
+    [userId]
+  );
 
-  return basketItemIds
-    .map((itemId) => data.items.find((item) => item.id === itemId))
-    .filter(Boolean);
+  return rows;
 }
 
 //
-// ✅ UPDATED: dual currency totals
+// ✅ TOTALS
 //
-function getBasketTotal(userId) {
-  const basket = getBasket(userId);
-
-  let totalGBP = 0;
-  let totalRobux = 0;
-
-  for (const item of basket) {
-    totalGBP += item.price || 0;
-    totalRobux += item.robuxPrice || 0;
-  }
+async function getBasketTotal(userId) {
+  const { rows } = await pool.query(
+    `SELECT 
+      COALESCE(SUM(price),0) as total_gbp,
+      COALESCE(SUM(robux_price),0) as total_robux
+     FROM baskets b
+     JOIN items i ON b.item_id = i.id
+     WHERE b.user_id = $1`,
+    [userId]
+  );
 
   return {
-    gbp: totalGBP,
-    robux: totalRobux,
+    gbp: Number(rows[0].total_gbp),
+    robux: Number(rows[0].total_robux),
   };
 }
 
-function removeFromBasket(userId, itemId) {
-  const data = readDatabase();
-  const basketItemIds = data.baskets[userId] || [];
-
-  const directMatch = data.items.find((entry) => entry.id === itemId);
-  const codeMatch = data.items.find(
-    (entry) => basketItemIds.includes(entry.id) && entry.code === itemId.trim()
+//
+// ✅ REMOVE FROM BASKET
+//
+async function removeFromBasket(userId, code) {
+  const { rows } = await pool.query(
+    `SELECT i.* FROM items i
+     JOIN baskets b ON b.item_id = i.id
+     WHERE b.user_id = $1 AND i.code = $2`,
+    [userId, code.trim()]
   );
 
-  const targetItem = directMatch || codeMatch;
+  const item = rows[0];
+  if (!item) return null;
 
-  if (!targetItem || !basketItemIds.includes(targetItem.id)) return null;
+  await pool.query(
+    `DELETE FROM baskets WHERE user_id=$1 AND item_id=$2`,
+    [userId, item.id]
+  );
 
-  data.baskets[userId] = basketItemIds.filter((id) => id !== targetItem.id);
-
-  if (targetItem.oneTime) {
-    targetItem.status = 'available';
-    targetItem.reservedBy = null;
-    targetItem.reservedAt = null;
+  if (item.one_time) {
+    await pool.query(
+      `UPDATE items SET status='available', reserved_by=NULL, reserved_at=NULL WHERE id=$1`,
+      [item.id]
+    );
   }
 
-  writeDatabase(data);
-  return targetItem;
+  return item;
 }
 
-function clearBasket(userId) {
-  const basketItems = getBasket(userId);
+//
+// ✅ CLEAR BASKET
+//
+async function clearBasket(userId) {
+  const items = await getBasket(userId);
 
-  for (const item of basketItems) {
-    removeFromBasket(userId, item.id);
+  for (const item of items) {
+    await removeFromBasket(userId, item.code);
   }
 
-  return basketItems.length;
+  return items.length;
 }
 
-function completePurchase(userId) {
-  const data = readDatabase();
-  const basketItemIds = data.baskets[userId] || [];
+//
+// ✅ COMPLETE PURCHASE
+//
+async function completePurchase(userId) {
+  const items = await getBasket(userId);
 
-  if (basketItemIds.length === 0) return [];
-
-  const purchasedItems = [];
-
-  for (const itemId of basketItemIds) {
-    const item = data.items.find((entry) => entry.id === itemId);
-    if (!item) continue;
-
-    if (item.oneTime) {
-      item.status = 'purchased';
-      item.purchasedBy = userId;
-      item.purchasedAt = new Date().toISOString();
+  for (const item of items) {
+    if (item.one_time) {
+      await pool.query(
+        `UPDATE items 
+         SET status='purchased', purchased_by=$1, purchased_at=NOW()
+         WHERE id=$2`,
+        [userId, item.id]
+      );
     }
-
-    purchasedItems.push(item);
   }
 
-  delete data.baskets[userId];
-  writeDatabase(data);
+  await pool.query(`DELETE FROM baskets WHERE user_id=$1`, [userId]);
 
-  return purchasedItems;
+  return items;
 }
 
 module.exports = {
   addCode,
   addToBasket,
-  clearBasket,
-  completePurchase,
-  deleteCode,
   getBasket,
   getBasketTotal,
-  getCodes,
-  getProductSummary,
-  getStockSummary,
   removeFromBasket,
+  clearBasket,
+  completePurchase,
 };
