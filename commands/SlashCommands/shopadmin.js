@@ -23,21 +23,20 @@ module.exports = {
   async execute(interaction) {
     const basket = await getBasket(interaction.user.id);
 
-    if (!basket.length) {
-      await interaction.reply({
+    if (!basket || basket.length === 0) {
+      return interaction.reply({
         content: 'Your basket is empty, so there is nothing to purchase.',
         ephemeral: true,
       });
-      return;
     }
 
-    const totals = await getBasketTotal(interaction.user.id);
+    const total = await getBasketTotal(interaction.user.id);
 
-    // ✅ FIX: support both DB formats
+    // ✅ GROUP ITEMS
     const grouped = {};
 
     for (const item of basket) {
-      const name = item.product_name || item.productName;
+      const name = item.productName || item.product_name || 'Unknown';
 
       if (!grouped[name]) {
         grouped[name] = {
@@ -46,11 +45,12 @@ module.exports = {
         };
       }
 
-      grouped[name].quantity++;
+      grouped[name].quantity += 1;
     }
 
+    // ✅ FIXED MAP (this was your crash area)
     const summaryLines = Object.entries(grouped).map(([name, data]) => {
-      const itemTotal = data.price * data.quantity;
+      const itemTotal = (data.price || 0) * data.quantity;
       return `**${name}** x${data.quantity} - £${itemTotal.toFixed(2)}`;
     });
 
@@ -68,7 +68,9 @@ module.exports = {
     const ticketChannel = await guild.channels.create({
       name: `purchase-${safeName}`,
       type: ChannelType.GuildText,
-      parent: process.env.PURCHASE_CATEGORY_ID || DEFAULT_PURCHASE_CATEGORY_ID,
+      parent:
+        process.env.PURCHASE_CATEGORY_ID ||
+        DEFAULT_PURCHASE_CATEGORY_ID,
       topic: `Purchase ticket for ${interaction.user.tag} (${interaction.user.id})`,
       permissionOverwrites: [
         {
@@ -98,13 +100,13 @@ module.exports = {
     const purchasedItems = await completePurchase(interaction.user.id);
 
     const itemLines = purchasedItems.map((item) => {
-      const name = item.product_name || item.productName;
+      const name = item.productName || item.product_name || 'Unknown';
 
       return (
         `**${name}**\n` +
         `💰 £${(item.price || 0).toFixed(2)}\n` +
         `Code: \`${item.code}\`\n` +
-        `Image: ${item.image_url || item.imageUrl || 'None'}`
+        `Image: ${item.imageUrl || 'None'}`
       );
     });
 
@@ -121,13 +123,14 @@ module.exports = {
         .setStyle(ButtonStyle.Danger)
     );
 
+    // ✅ SUMMARY MESSAGE
     await ticketChannel.send({
       content:
         `🧾 **Purchase Ticket**\n\n` +
         `👤 Customer: <@${interaction.user.id}>\n\n` +
         `🛒 **Order Summary:**\n` +
-        summaryLines.join('\n') +
-        `\n\n💰 **Total: £${totals.gbp.toFixed(2)}**\n\n` +
+        `${summaryLines.join('\n')}\n\n` +
+        `💰 **Total: £${total.toFixed(2)}**\n\n` +
         `---\n📦 **Delivered Codes Below:**`,
     });
 
@@ -147,19 +150,17 @@ module.exports = {
 
   async handleButton(interaction) {
     if (!interaction.inGuild()) {
-      await interaction.reply({
+      return interaction.reply({
         content: 'This button can only be used inside a server ticket channel.',
         ephemeral: true,
       });
-      return;
     }
 
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
-      await interaction.reply({
+      return interaction.reply({
         content: 'Only staff members can use ticket controls.',
         ephemeral: true,
       });
-      return;
     }
 
     const [, action] = interaction.customId.split(':');
@@ -167,33 +168,42 @@ module.exports = {
 
     if (action === 'claim') {
       if (channel.topic?.includes('Claimed by:')) {
-        await interaction.reply({
+        return interaction.reply({
           content: `This ticket is already claimed.\n${channel.topic}`,
           ephemeral: true,
         });
-        return;
+      }
+
+      const updatedTopic =
+        `${channel.topic || 'Purchase ticket'} | Claimed by: ` +
+        `${interaction.user.tag} (${interaction.user.id})`;
+
+      let updatedName = channel.name;
+      if (!updatedName.startsWith('claimed-')) {
+        updatedName = `claimed-${updatedName}`.slice(0, 100);
       }
 
       await channel.edit({
-        name: `claimed-${channel.name}`.slice(0, 100),
-        topic: `${channel.topic} | Claimed by: ${interaction.user.tag}`,
+        name: updatedName,
+        topic: updatedTopic,
       });
 
-      await interaction.reply({
+      return interaction.reply({
         content: `${interaction.user} claimed this ticket.`,
       });
     }
 
     if (action === 'close') {
       await interaction.reply({
-        content: `Closing ticket...`,
+        content: `Closing ticket by request of ${interaction.user}...`,
       });
 
-      await channel.delete();
+      await channel.delete('Purchase ticket closed by staff');
     }
   },
 };
 
+// ✅ helper
 function chunkLines(lines, maxLength) {
   const chunks = [];
   let current = '';
