@@ -89,6 +89,53 @@ async function addToBasket(userId, code) {
   return item;
 }
 
+async function addProductToBasket(userId, productName) {
+  const productKey = normalizeProductName(productName);
+
+  const { rows } = await pool.query(
+    `
+    SELECT i.*
+    FROM items i
+    LEFT JOIN baskets b
+      ON b.item_id = i.id
+      AND b.user_id = $2
+    WHERE i.product_key = $1
+      AND b.item_id IS NULL
+      AND (
+        i.one_time = false
+        OR (i.one_time = true AND i.status = 'available')
+      )
+    ORDER BY
+      CASE WHEN i.one_time THEN 0 ELSE 1 END,
+      i.added_at ASC
+    LIMIT 1
+    `,
+    [productKey, userId]
+  );
+
+  const item = rows[0];
+
+  if (!item) {
+    return null;
+  }
+
+  if (item.one_time) {
+    await pool.query(
+      `UPDATE items
+       SET status='reserved', reserved_by=$1, reserved_at=NOW()
+       WHERE id=$2`,
+      [userId, item.id]
+    );
+  }
+
+  await pool.query(
+    `INSERT INTO baskets (user_id, item_id) VALUES ($1,$2)`,
+    [userId, item.id]
+  );
+
+  return item;
+}
+
 //
 // ✅ GET BASKET
 //
@@ -146,6 +193,45 @@ async function removeFromBasket(userId, code) {
     await pool.query(
       `UPDATE items 
        SET status='available', reserved_by=NULL, reserved_at=NULL 
+       WHERE id=$1`,
+      [item.id]
+    );
+  }
+
+  return item;
+}
+
+async function removeProductFromBasket(userId, productName) {
+  const productKey = normalizeProductName(productName);
+
+  const { rows } = await pool.query(
+    `
+    SELECT i.*
+    FROM items i
+    JOIN baskets b ON b.item_id = i.id
+    WHERE b.user_id = $1
+      AND i.product_key = $2
+    ORDER BY b.added_at DESC, i.added_at DESC
+    LIMIT 1
+    `,
+    [userId, productKey]
+  );
+
+  const item = rows[0];
+
+  if (!item) {
+    return null;
+  }
+
+  await pool.query(
+    `DELETE FROM baskets WHERE user_id=$1 AND item_id=$2`,
+    [userId, item.id]
+  );
+
+  if (item.one_time) {
+    await pool.query(
+      `UPDATE items
+       SET status='available', reserved_by=NULL, reserved_at=NULL
        WHERE id=$1`,
       [item.id]
     );
@@ -331,9 +417,11 @@ async function getProductListingData(productName) {
 module.exports = {
   addCode,
   addToBasket,
+  addProductToBasket,
   getBasket,
   getBasketTotal,
   removeFromBasket,
+  removeProductFromBasket,
   clearBasket,
   completePurchase,
   getCodes,

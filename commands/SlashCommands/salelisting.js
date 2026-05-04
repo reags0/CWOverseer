@@ -11,7 +11,14 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const { getProductListingData } = require('../../utils/shopDatabase');
+const {
+  addProductToBasket,
+  getBasket,
+  getBasketTotal,
+  getProductListingData,
+  removeProductFromBasket,
+} = require('../../utils/shopDatabase');
+const { createPurchaseTicket } = require('../../utils/purchaseTicket');
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -148,7 +155,7 @@ module.exports = {
         },
         {
           name: 'Stock',
-          value: `${draft.listingData.available} available`,
+          value: 'Unlimited',
           inline: true,
         },
         {
@@ -172,6 +179,7 @@ module.exports = {
       channelId: draft.channelId,
       createdAt: Date.now(),
       embedData: embed.toJSON(),
+      productName: draft.listingData.productName,
       userId: interaction.user.id,
     });
 
@@ -197,7 +205,78 @@ module.exports = {
   },
 
   async handleButton(interaction) {
-    const [, action, sessionId] = interaction.customId.split(':');
+    const [, action, payload] = interaction.customId.split(':');
+
+    if (action === 'add') {
+      const productName = decodeProductName(payload);
+      const item = await addProductToBasket(interaction.user.id, productName);
+
+      if (!item) {
+        await interaction.reply({
+          content: `No available stock was found for **${productName}**.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.reply({
+        content:
+          `Added **${item.product_name || item.productName}** to your basket.\n` +
+          `GBP: ${Number(item.price || 0).toFixed(2)}\n` +
+          `Robux: ${Number(item.robux_price || 0)}`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (action === 'viewcart') {
+      const basket = await getBasket(interaction.user.id);
+      const total = await getBasketTotal(interaction.user.id);
+
+      await interaction.reply({
+        content: formatBasketView(basket, total),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (action === 'remove') {
+      const productName = decodeProductName(payload);
+      const item = await removeProductFromBasket(interaction.user.id, productName);
+
+      if (!item) {
+        await interaction.reply({
+          content: `You do not have **${productName}** in your basket.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.reply({
+        content: `Removed one **${item.product_name || item.productName}** from your basket.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (action === 'checkout') {
+      await interaction.deferReply({ ephemeral: true });
+      const result = await createPurchaseTicket(interaction);
+
+      if (!result.ok) {
+        await interaction.editReply({
+          content: result.message,
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: `Purchase ticket created successfully: ${result.ticketChannel}`,
+      });
+      return;
+    }
+
+    const sessionId = payload;
     const sessions = ensureStore(interaction.client, 'saleListingSessions');
     const session = sessions.get(sessionId);
 
@@ -239,6 +318,7 @@ module.exports = {
 
         await channel.send({
           embeds: [EmbedBuilder.from(session.embedData)],
+          components: [buildListingButtons(session.productName)],
         });
 
         sessions.delete(sessionId);
@@ -277,6 +357,37 @@ function trimForPlaceholder(value) {
   return value.length > 100 ? `${value.slice(0, 97)}...` : value;
 }
 
+function buildListingButtons(productName) {
+  const encodedProductName = encodeProductName(productName);
+
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`salelisting:add:${encodedProductName}`)
+      .setLabel('Add Product To Cart')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('salelisting:viewcart')
+      .setLabel('View Current Cart')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`salelisting:remove:${encodedProductName}`)
+      .setLabel('Delete Product From Cart')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('salelisting:checkout')
+      .setLabel('Checkout')
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+function encodeProductName(value) {
+  return encodeURIComponent(value);
+}
+
+function decodeProductName(value) {
+  return decodeURIComponent(value);
+}
+
 function formatPriceOptions(listingData) {
   const lines = [];
 
@@ -293,6 +404,46 @@ function formatPriceOptions(listingData) {
   }
 
   return lines.join('\n') || 'No prices have been set yet.';
+}
+
+function formatBasketView(basket, total) {
+  if (!basket || basket.length === 0) {
+    return 'Your basket is empty.';
+  }
+
+  const grouped = {};
+
+  for (const item of basket) {
+    const name = item.product_name || item.productName;
+
+    if (!grouped[name]) {
+      grouped[name] = {
+        quantity: 0,
+        price: Number(item.price || 0),
+        robuxPrice: Number(item.robux_price || 0),
+      };
+    }
+
+    grouped[name].quantity += 1;
+  }
+
+  const lines = Object.entries(grouped).map(([name, data]) => {
+    const gbpTotal = data.price * data.quantity;
+    const robuxTotal = data.robuxPrice * data.quantity;
+
+    return (
+      `**${name}** x${data.quantity} | ` +
+      `GBP ${gbpTotal.toFixed(2)} | ` +
+      `Robux ${robuxTotal}`
+    );
+  });
+
+  return (
+    `Your current cart:\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `Total GBP: ${Number(total.gbp || 0).toFixed(2)}\n` +
+    `Total Robux: ${Number(total.robux || 0)}`
+  );
 }
 
 function resolveImageInput(value) {
