@@ -363,20 +363,20 @@ function buildListingButtons(productName) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`salelisting:add:${encodedProductName}`)
-      .setLabel('Add Product To Cart')
+      .setLabel('\u{1F4B2} Add Product To Cart')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
+      .setCustomId(`salelisting:remove:${encodedProductName}`)
+      .setLabel('\u274C Remove Item From Cart')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
       .setCustomId('salelisting:viewcart')
-      .setLabel('View Current Cart')
+      .setLabel('\u{1F440} View Your Cart')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`salelisting:remove:${encodedProductName}`)
-      .setLabel('Delete Product From Cart')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
       .setCustomId('salelisting:checkout')
-      .setLabel('Checkout')
-      .setStyle(ButtonStyle.Danger)
+      .setLabel('\u2714 Checkout')
+      .setStyle(ButtonStyle.Secondary)
   );
 }
 
