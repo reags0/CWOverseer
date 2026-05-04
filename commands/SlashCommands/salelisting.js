@@ -58,7 +58,7 @@ module.exports = {
       .setLabel('Title')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(256)
-      .setPlaceholder(`${listingData.productName} For Sale`)
+      .setPlaceholder(trimForPlaceholder(`${listingData.productName} For Sale`))
       .setRequired(false);
 
     const descriptionInput = new TextInputBuilder()
@@ -79,7 +79,9 @@ module.exports = {
       .setCustomId('image')
       .setLabel('Image ID or URL')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder(listingData.imageUrl || '1234567890 or https://...')
+      .setPlaceholder(
+        trimForPlaceholder(listingData.imageUrl || '1234567890 or https://...')
+      )
       .setRequired(false);
 
     modal.addComponents(
@@ -269,6 +271,10 @@ function ensureStore(client, key) {
 
 function trimForTitle(value) {
   return value.length > 30 ? `${value.slice(0, 27)}...` : value;
+}
+
+function trimForPlaceholder(value) {
+  return value.length > 100 ? `${value.slice(0, 97)}...` : value;
 }
 
 function formatPriceOptions(listingData) {
