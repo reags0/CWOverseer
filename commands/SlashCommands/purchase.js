@@ -147,24 +147,31 @@ module.exports = {
 
     const channel = interaction.channel;
     const metadataBefore = extractOrderMetadataFromTopic(channel.topic);
-    await interaction.reply({
-      content: `Updating order status to ${status.emoji} ${status.label}...`,
-      ephemeral: true,
-    });
+    await interaction.deferReply({ ephemeral: true });
 
     await channel.edit({
       name: applyStatusEmojiToChannelName(channel.name, status.emoji),
       topic: updateTicketTopicStatus(channel.topic, status.label),
     });
 
-    const openingMessage = await fetchOrderOpeningMessage(channel);
+    let openingMessage = null;
 
-    if (openingMessage) {
-      await updateOpeningOrderEmbedStatus(openingMessage, status);
+    try {
+      openingMessage = await fetchOrderOpeningMessage(channel);
+
+      if (openingMessage) {
+        await updateOpeningOrderEmbedStatus(openingMessage, status);
+      }
+    } catch (error) {
+      console.error('Failed to update the purchase opening embed status:', error);
     }
 
-    if (statusKey === 'finished' && metadataBefore.status !== ORDER_STATUSES.finished.label) {
-      await sendFinishedOrderLog(interaction, openingMessage);
+    try {
+      if (statusKey === 'finished' && metadataBefore.status !== ORDER_STATUSES.finished.label) {
+        await sendFinishedOrderLog(interaction, openingMessage);
+      }
+    } catch (error) {
+      console.error('Failed to send finished purchase order log:', error);
     }
 
     await interaction.editReply({
