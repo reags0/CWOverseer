@@ -14,23 +14,25 @@ const {
 } = require('./shopDatabase');
 
 const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
+const STAFF_ROLE_ID = '1500521357392351283';
+const FINISHED_ORDER_LOG_CHANNEL_ID = '1501995144428392498';
 const DEFAULT_STATUS_KEY = 'awaiting_staff';
 
 const ORDER_STATUSES = {
   finished: {
-    emoji: '✔',
+    emoji: '\u2714',
     label: 'Finished',
   },
   paid: {
-    emoji: '🟢',
+    emoji: '\u{1F7E2}',
     label: 'Paid',
   },
   awaiting_payment: {
-    emoji: '🟡',
+    emoji: '\u{1F7E1}',
     label: 'Awaiting Payment',
   },
   awaiting_staff: {
-    emoji: '🔴',
+    emoji: '\u{1F534}',
     label: 'Awaiting Staff',
   },
 };
@@ -81,37 +83,48 @@ async function createPurchaseTicket(interaction) {
   const orderId = generateOrderId();
   const status = ORDER_STATUSES[DEFAULT_STATUS_KEY];
 
+  const permissionOverwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionFlagsBits.ViewChannel],
+    },
+    {
+      id: interaction.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    },
+    {
+      id: STAFF_ROLE_ID,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    },
+    {
+      id: interaction.client.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    },
+  ];
+
   const ticketChannel = await guild.channels.create({
     name: buildPurchaseChannelName(safeName, status.emoji),
     type: ChannelType.GuildText,
     parent: process.env.PURCHASE_CATEGORY_ID || DEFAULT_PURCHASE_CATEGORY_ID,
     topic:
       `Purchase ticket for ${interaction.user.tag} (${interaction.user.id}) | ` +
+      `User ID: ${interaction.user.id} | ` +
       `Order ID: ${orderId} | ` +
       `Status: ${status.label}`,
-    permissionOverwrites: [
-      {
-        id: guild.roles.everyone.id,
-        deny: [PermissionFlagsBits.ViewChannel],
-      },
-      {
-        id: interaction.user.id,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      },
-      {
-        id: interaction.client.user.id,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ManageChannels,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      },
-    ],
+    permissionOverwrites,
   });
 
   const purchasedItems = await completePurchase(interaction.user.id);
@@ -132,7 +145,7 @@ async function createPurchaseTicket(interaction) {
   const orderEmbed = new EmbedBuilder()
     .setColor('#2B8CFF')
     .setTitle('Purchase Ticket Opened')
-    .setDescription(`Your order has been created and the codes have been delivered in this ticket.`)
+    .setDescription('Your order has been created and the codes have been delivered in this ticket.')
     .addFields(
       {
         name: 'Customer',
@@ -160,10 +173,10 @@ async function createPurchaseTicket(interaction) {
           `Robux ${Number(total.robux || 0)}`,
       }
     )
-    .setFooter({ text: 'Use the buttons below to cancel or update this order.' })
+    .setFooter({ text: 'Use the buttons below to manage this order.' })
     .setTimestamp();
 
-  const orderControls = new ActionRowBuilder().addComponents(
+  const controls = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('purchase:cancel')
       .setLabel('Cancel Order')
@@ -171,10 +184,7 @@ async function createPurchaseTicket(interaction) {
     new ButtonBuilder()
       .setCustomId('purchase:status')
       .setLabel('Update Status')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  const staffControls = new ActionRowBuilder().addComponents(
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`purchase:claim:${interaction.user.id}`)
       .setLabel('Claim Ticket')
@@ -187,12 +197,7 @@ async function createPurchaseTicket(interaction) {
 
   await ticketChannel.send({
     embeds: [orderEmbed],
-    components: [orderControls],
-  });
-
-  await ticketChannel.send({
-    content: 'Staff controls for this ticket:',
-    components: [staffControls],
+    components: [controls],
   });
 
   for (const chunk of chunkLines(itemLines, 1800)) {
@@ -235,7 +240,7 @@ function applyStatusEmojiToChannelName(channelName, emoji) {
     nextName = nextName.slice('claimed-'.length);
   }
 
-  nextName = nextName.replace(/^(✔|🟢|🟡|🔴)-/u, '');
+  nextName = nextName.replace(/^(\u2714|\u{1F7E2}|\u{1F7E1}|\u{1F534})-/u, '');
   return `${claimedPrefix}${emoji}-${nextName}`.slice(0, 100);
 }
 
@@ -243,25 +248,53 @@ function resolveStatusInput(input) {
   const normalized = input.trim().toLowerCase();
 
   const aliases = new Map([
-    ['✔', 'finished'],
+    ['\u2714', 'finished'],
     ['finished', 'finished'],
     ['done', 'finished'],
     ['complete', 'finished'],
     ['completed', 'finished'],
-    ['🟢', 'paid'],
+    ['\u{1F7E2}', 'paid'],
     ['paid', 'paid'],
     ['payment received', 'paid'],
-    ['🟡', 'awaiting_payment'],
+    ['\u{1F7E1}', 'awaiting_payment'],
     ['awaiting payment', 'awaiting_payment'],
     ['pending payment', 'awaiting_payment'],
     ['payment pending', 'awaiting_payment'],
-    ['🔴', 'awaiting_staff'],
+    ['\u{1F534}', 'awaiting_staff'],
     ['awaiting staff', 'awaiting_staff'],
     ['waiting staff', 'awaiting_staff'],
     ['staff', 'awaiting_staff'],
   ]);
 
   return aliases.get(normalized) || null;
+}
+
+function extractOrderMetadataFromTopic(topic) {
+  const userId = topic?.match(/User ID: (\d{5,})/)?.[1] || null;
+  const orderId = topic?.match(/Order ID: ([A-Z0-9-]+)/)?.[1] || null;
+  const status = topic?.match(/Status: ([^|]+)/)?.[1]?.trim() || null;
+
+  return {
+    userId,
+    orderId,
+    status,
+  };
+}
+
+async function fetchOrderOpeningMessage(channel) {
+  const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+
+  if (!messages) {
+    return null;
+  }
+
+  return (
+    messages.find(
+      (message) =>
+        message.author?.bot &&
+        message.embeds?.[0]?.title === 'Purchase Ticket Opened'
+    ) || null
+  );
 }
 
 function chunkLines(lines, maxLength) {
@@ -292,7 +325,11 @@ function chunkLines(lines, maxLength) {
 module.exports = {
   createPurchaseTicket,
   ORDER_STATUSES,
+  STAFF_ROLE_ID,
+  FINISHED_ORDER_LOG_CHANNEL_ID,
   applyStatusEmojiToChannelName,
+  extractOrderMetadataFromTopic,
+  fetchOrderOpeningMessage,
   resolveStatusInput,
   updateTicketTopicStatus,
 };

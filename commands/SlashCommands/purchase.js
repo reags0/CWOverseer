@@ -1,7 +1,5 @@
 const {
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ModalBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
@@ -11,8 +9,12 @@ const {
 
 const {
   ORDER_STATUSES,
+  STAFF_ROLE_ID,
+  FINISHED_ORDER_LOG_CHANNEL_ID,
   applyStatusEmojiToChannelName,
   createPurchaseTicket,
+  extractOrderMetadataFromTopic,
+  fetchOrderOpeningMessage,
   resolveStatusInput,
   updateTicketTopicStatus,
 } = require('../../utils/purchaseTicket');
@@ -58,7 +60,7 @@ module.exports = {
     }
 
     if (action === 'status') {
-      if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+      if (!memberCanUseStaffControls(interaction)) {
         return interaction.reply({
           content: 'Only staff can update order statuses.',
           ephemeral: true,
@@ -82,7 +84,7 @@ module.exports = {
       return;
     }
 
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+    if (!memberCanUseStaffControls(interaction)) {
       return interaction.reply({
         content: 'Only staff can use ticket controls.',
         ephemeral: true,
@@ -129,7 +131,7 @@ module.exports = {
       return;
     }
 
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
+    if (!memberCanUseStaffControls(interaction)) {
       await interaction.reply({
         content: 'Only staff can update order statuses.',
         ephemeral: true,
@@ -156,8 +158,62 @@ module.exports = {
       topic: updateTicketTopicStatus(channel.topic, status.label),
     });
 
+    if (statusKey === 'finished') {
+      await sendFinishedOrderLog(interaction);
+    }
+
     await interaction.reply({
       content: `Order status updated to ${status.emoji} ${status.label}.`,
     });
   },
 };
+
+function memberCanUseStaffControls(interaction) {
+  return (
+    interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels) ||
+    interaction.member.roles.cache.has(STAFF_ROLE_ID)
+  );
+}
+
+async function sendFinishedOrderLog(interaction) {
+  const logChannel = await interaction.client.channels.fetch(FINISHED_ORDER_LOG_CHANNEL_ID).catch(() => null);
+
+  if (!logChannel || !logChannel.isTextBased()) {
+    return;
+  }
+
+  const metadata = extractOrderMetadataFromTopic(interaction.channel.topic);
+  const openingMessage = await fetchOrderOpeningMessage(interaction.channel);
+  const orderSummaryField = openingMessage?.embeds?.[0]?.fields?.find((field) => field.name === 'Order Summary');
+  const totalsField = openingMessage?.embeds?.[0]?.fields?.find((field) => field.name === 'Totals');
+
+  await logChannel.send({
+    embeds: [
+      {
+        color: 0x2b8cff,
+        title: 'Purchase Order Finished',
+        fields: [
+          {
+            name: 'User ID',
+            value: metadata.userId || interaction.user.id,
+            inline: true,
+          },
+          {
+            name: 'Order ID',
+            value: metadata.orderId || 'Unknown',
+            inline: true,
+          },
+          {
+            name: 'Products Purchased',
+            value: orderSummaryField?.value || 'Unknown',
+          },
+          {
+            name: 'Total Amount',
+            value: totalsField?.value || 'Unknown',
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
+}
