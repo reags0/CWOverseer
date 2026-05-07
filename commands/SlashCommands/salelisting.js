@@ -22,6 +22,8 @@ const {
 const { createPurchaseTicket } = require('../../utils/purchaseTicket');
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
+const PAYPAL_EMOJI = '<:PayPal:1502028520694485074>';
+const ROBUX_EMOJI = '<:Robux:1502028251759902870>';
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -223,8 +225,8 @@ module.exports = {
       await interaction.reply({
         content:
           `Added **${item.product_name || item.productName}** to your basket.\n` +
-          `GBP: ${Number(item.price || 0).toFixed(2)}\n` +
-          `Robux: ${Number(item.robux_price || 0)}`,
+          `${PAYPAL_EMOJI}: ${Number(item.price || 0).toFixed(2)}\n` +
+          `${ROBUX_EMOJI}: ${Number(item.robux_price || 0)}`,
         ephemeral: true,
       });
       return;
@@ -417,14 +419,14 @@ function formatPriceOptions(listingData) {
 
   if (listingData.prices.length > 0) {
     lines.push(
-      `GBP: ${listingData.prices
-        .map((price) => `GBP ${price.toFixed(2)}`)
+      `${PAYPAL_EMOJI}: ${listingData.prices
+        .map((price) => `${PAYPAL_EMOJI} ${price.toFixed(2)}`)
         .join(', ')}`
     );
   }
 
   if (listingData.robuxPrices.length > 0) {
-    lines.push(`Robux: ${listingData.robuxPrices.join(', ')}`);
+    lines.push(`${ROBUX_EMOJI}: ${listingData.robuxPrices.join(', ')}`);
   }
 
   return lines.join('\n') || 'No prices have been set yet.';
@@ -457,16 +459,16 @@ function formatBasketView(basket, total) {
 
     return (
       `**${name}** x${data.quantity} | ` +
-      `GBP ${gbpTotal.toFixed(2)} | ` +
-      `Robux ${robuxTotal}`
+      `${PAYPAL_EMOJI} ${gbpTotal.toFixed(2)} | ` +
+      `${ROBUX_EMOJI} ${robuxTotal}`
     );
   });
 
   return (
     `Your current cart:\n\n` +
     `${lines.join('\n')}\n\n` +
-    `Total GBP: ${Number(total.gbp || 0).toFixed(2)}\n` +
-    `Total Robux: ${Number(total.robux || 0)}`
+    `Total ${PAYPAL_EMOJI}: ${Number(total.gbp || 0).toFixed(2)}\n` +
+    `Total ${ROBUX_EMOJI}: ${Number(total.robux || 0)}`
   );
 }
 

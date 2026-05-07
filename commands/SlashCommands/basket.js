@@ -13,6 +13,9 @@ const {
 } = require('../../utils/shopDatabase');
 const { createPurchaseTicket } = require('../../utils/purchaseTicket');
 
+const PAYPAL_EMOJI = '<:PayPal:1502028520694485074>';
+const ROBUX_EMOJI = '<:Robux:1502028251759902870>';
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('basket')
@@ -76,7 +79,7 @@ module.exports = {
       return interaction.reply({
         content:
           `Added **${item.product_name || item.productName}** to your basket.\n` +
-          `Price: GBP ${Number(item.price || 0).toFixed(2)}\n` +
+          `Price: ${PAYPAL_EMOJI} ${Number(item.price || 0).toFixed(2)}\n` +
           `Code: \`${item.code}\``,
         ephemeral: true,
       });
@@ -108,9 +111,9 @@ module.exports = {
       const lines = Object.entries(grouped).map(([name, data]) => {
         const gbpTotal = data.price * data.quantity;
         const robuxTotal = data.robuxPrice * data.quantity;
-        const robuxLine = robuxTotal > 0 ? ` | Robux ${robuxTotal}` : '';
+        const robuxLine = robuxTotal > 0 ? ` | ${ROBUX_EMOJI} ${robuxTotal}` : '';
 
-        return `**${name}** x${data.quantity} | GBP ${gbpTotal.toFixed(2)}${robuxLine}`;
+        return `**${name}** x${data.quantity} | ${PAYPAL_EMOJI} ${gbpTotal.toFixed(2)}${robuxLine}`;
       });
 
       const total = await getBasketTotal(userId);
@@ -119,8 +122,8 @@ module.exports = {
         content:
           `**Your Basket**\n\n` +
           lines.join('\n') +
-          `\n\n**Total GBP: ${Number(total.gbp || 0).toFixed(2)}**` +
-          `\n**Total Robux: ${Number(total.robux || 0)}**`,
+          `\n\n**Total ${PAYPAL_EMOJI} ${Number(total.gbp || 0).toFixed(2)}**` +
+          `\n**Total ${ROBUX_EMOJI} ${Number(total.robux || 0)}**`,
         components: [buildCartButtons()],
         ephemeral: true,
       });

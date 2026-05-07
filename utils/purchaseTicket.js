@@ -17,6 +17,8 @@ const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
 const STAFF_ROLE_ID = '1500521357392351283';
 const FINISHED_ORDER_LOG_CHANNEL_ID = '1501995144428392498';
 const DEFAULT_STATUS_KEY = 'awaiting_payment';
+const PAYPAL_EMOJI = '<:PayPal:1502028520694485074>';
+const ROBUX_EMOJI = '<:Robux:1502028251759902870>';
 
 const ORDER_STATUSES = {
   finished: {
@@ -63,9 +65,9 @@ async function createPurchaseTicket(interaction) {
   const summaryLines = Object.entries(grouped).map(([name, data]) => {
     const itemTotal = data.price * data.quantity;
     const robuxTotal = data.robuxPrice * data.quantity;
-    const robuxLine = robuxTotal > 0 ? ` | Robux ${robuxTotal}` : '';
+    const robuxLine = robuxTotal > 0 ? ` | ${ROBUX_EMOJI} ${robuxTotal}` : '';
 
-    return `**${name}** x${data.quantity} - GBP ${itemTotal.toFixed(2)}${robuxLine}`;
+    return `**${name}** x${data.quantity} - ${PAYPAL_EMOJI} ${itemTotal.toFixed(2)}${robuxLine}`;
   });
 
   const guild = interaction.guild;
@@ -129,8 +131,8 @@ async function createPurchaseTicket(interaction) {
 
     return [
       `**${name}**`,
-      `Price: GBP ${Number(item.price || 0).toFixed(2)}`,
-      item.robux_price ? `Robux: ${item.robux_price}` : null,
+      `Price: ${PAYPAL_EMOJI} ${Number(item.price || 0).toFixed(2)}`,
+      item.robux_price ? `${ROBUX_EMOJI}: ${item.robux_price}` : null,
       `Code: \`${item.code}\``,
       `Image: ${item.image_url || item.imageUrl || 'None'}`,
     ]
@@ -165,8 +167,8 @@ async function createPurchaseTicket(interaction) {
       {
         name: 'Totals',
         value:
-          `GBP ${Number(total.gbp || 0).toFixed(2)}\n` +
-          `Robux ${Number(total.robux || 0)}`,
+          `${PAYPAL_EMOJI} ${Number(total.gbp || 0).toFixed(2)}\n` +
+          `${ROBUX_EMOJI} ${Number(total.robux || 0)}`,
       }
     )
     .setFooter({ text: 'Use the buttons below to manage this order.' })

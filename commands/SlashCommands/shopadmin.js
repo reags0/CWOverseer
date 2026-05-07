@@ -7,6 +7,9 @@ const {
   getStockSummary,
 } = require('../../utils/shopDatabase');
 
+const PAYPAL_EMOJI = '<:PayPal:1502028520694485074>';
+const ROBUX_EMOJI = '<:Robux:1502028251759902870>';
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('shopadmin')
@@ -112,8 +115,8 @@ module.exports = {
         content:
           `Stored a new ${item.oneTime ? 'one-time' : 'reusable'} code for **${item.productName}** ` +
           `with item id \`${item.id}\`.` +
-          `\nPrice: GBP ${Number(item.price || 0).toFixed(2)}` +
-          (item.robuxPrice ? `\nRobux: ${item.robuxPrice}` : '') +
+          `\nPrice: ${PAYPAL_EMOJI} ${Number(item.price || 0).toFixed(2)}` +
+          (item.robuxPrice ? `\n${ROBUX_EMOJI}: ${item.robuxPrice}` : '') +
           `\nItem Image: ${item.imageUrl || 'None'}`,
         ephemeral: true,
       });
