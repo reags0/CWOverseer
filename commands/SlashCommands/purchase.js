@@ -210,12 +210,6 @@ function buildStatusSelectMenu() {
           value: 'awaiting_payment',
           description: 'Waiting for the customer to pay',
           emoji: ORDER_STATUSES.awaiting_payment.emoji,
-        },
-        {
-          label: 'Awaiting Staff',
-          value: 'awaiting_staff',
-          description: 'Waiting for a staff member to continue',
-          emoji: ORDER_STATUSES.awaiting_staff.emoji,
         }
       )
   );

@@ -16,7 +16,7 @@ const {
 const DEFAULT_PURCHASE_CATEGORY_ID = '1499542332368879724';
 const STAFF_ROLE_ID = '1500521357392351283';
 const FINISHED_ORDER_LOG_CHANNEL_ID = '1501995144428392498';
-const DEFAULT_STATUS_KEY = 'awaiting_staff';
+const DEFAULT_STATUS_KEY = 'awaiting_payment';
 
 const ORDER_STATUSES = {
   finished: {
@@ -30,10 +30,6 @@ const ORDER_STATUSES = {
   awaiting_payment: {
     emoji: '\u{1F7E1}',
     label: 'Awaiting Payment',
-  },
-  awaiting_staff: {
-    emoji: '\u{1F534}',
-    label: 'Awaiting Staff',
   },
 };
 
@@ -240,7 +236,7 @@ function applyStatusEmojiToChannelName(channelName, emoji) {
     nextName = nextName.slice('claimed-'.length);
   }
 
-  nextName = nextName.replace(/^(\u2714|\u{1F7E2}|\u{1F7E1}|\u{1F534})-/u, '');
+  nextName = nextName.replace(/^(\u2714|\u{1F7E2}|\u{1F7E1})-/u, '');
   return `${claimedPrefix}${emoji}-${nextName}`.slice(0, 100);
 }
 
@@ -260,10 +256,6 @@ function resolveStatusInput(input) {
     ['awaiting payment', 'awaiting_payment'],
     ['pending payment', 'awaiting_payment'],
     ['payment pending', 'awaiting_payment'],
-    ['\u{1F534}', 'awaiting_staff'],
-    ['awaiting staff', 'awaiting_staff'],
-    ['waiting staff', 'awaiting_staff'],
-    ['staff', 'awaiting_staff'],
   ]);
 
   return aliases.get(normalized) || null;
