@@ -70,7 +70,7 @@ module.exports = {
   },
 
   async handleModalSubmit(interaction) {
-    // ✅ ensure session store exists
+      // Existing Session Store checker
     if (!interaction.client.embedBuilderSessions) {
       interaction.client.embedBuilderSessions = new Map();
     }
