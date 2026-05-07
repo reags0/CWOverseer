@@ -57,8 +57,6 @@ client.on('guildMemberAdd', async (member) => {
   await sendWelcomeMessage(member, inviteData);
 });
 
-
-// ✅ ADD THIS BLOCK
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -74,8 +72,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 });
-// ✅ END BLOCK
-
 
 client.on('interactionCreate', async (interaction) => {
   try {
