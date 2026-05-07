@@ -13,6 +13,7 @@ const {
 
 const {
   addProductToBasket,
+  clearBasket,
   getBasket,
   getBasketTotal,
   getProductListingData,
@@ -235,6 +236,7 @@ module.exports = {
 
       await interaction.reply({
         content: formatBasketView(basket, total),
+        components: basket.length > 0 ? [buildCartButtons()] : [],
         ephemeral: true,
       });
       return;
@@ -272,6 +274,19 @@ module.exports = {
 
       await interaction.editReply({
         content: `Purchase ticket created successfully: ${result.ticketChannel}`,
+      });
+      return;
+    }
+
+    if (action === 'clearcart') {
+      const removedCount = await clearBasket(interaction.user.id);
+
+      await interaction.update({
+        content:
+          removedCount > 0
+            ? `Cleared ${removedCount} item(s) from your basket.`
+            : 'Your basket was already empty.',
+        components: [],
       });
       return;
     }
@@ -372,11 +387,20 @@ function buildListingButtons(productName) {
     new ButtonBuilder()
       .setCustomId('salelisting:viewcart')
       .setLabel('\u{1F440} View Your Cart')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Primary)
+  );
+}
+
+function buildCartButtons() {
+  return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('salelisting:checkout')
-      .setLabel('\u2714 Checkout')
-      .setStyle(ButtonStyle.Secondary)
+      .setLabel('Checkout')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('salelisting:clearcart')
+      .setLabel('Clear Cart')
+      .setStyle(ButtonStyle.Danger)
   );
 }
 

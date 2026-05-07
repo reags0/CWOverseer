@@ -108,6 +108,17 @@ client.on('interactionCreate', async (interaction) => {
       if (command?.handleButton) {
         await command.handleButton(interaction);
       }
+
+      return;
+    }
+
+    if (interaction.isStringSelectMenu()) {
+      const commandName = interaction.customId.split(':')[0];
+      const command = client.commands.get(commandName);
+
+      if (command?.handleSelectMenu) {
+        await command.handleSelectMenu(interaction);
+      }
     }
   } catch (error) {
     const interactionName =

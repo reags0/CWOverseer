@@ -1,4 +1,9 @@
-const { SlashCommandBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  SlashCommandBuilder,
+} = require('discord.js');
 const {
   addToBasket,
   clearBasket,
@@ -6,6 +11,7 @@ const {
   getBasketTotal,
   removeFromBasket,
 } = require('../../utils/shopDatabase');
+const { createPurchaseTicket } = require('../../utils/purchaseTicket');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -48,7 +54,6 @@ module.exports = {
     const userId = interaction.user.id;
     const subcommand = interaction.options.getSubcommand();
 
-    // Adds Code to Basket
     if (subcommand === 'add') {
       const code = interaction.options.getString('code');
       const item = await addToBasket(userId, code);
@@ -58,7 +63,10 @@ module.exports = {
       }
 
       if (item === false) {
-        return interaction.reply({ content: 'That one-time code is already reserved in someone else\'s basket.', ephemeral: true });
+        return interaction.reply({
+          content: "That one-time code is already reserved in someone else's basket.",
+          ephemeral: true,
+        });
       }
 
       if (!item) {
@@ -68,13 +76,12 @@ module.exports = {
       return interaction.reply({
         content:
           `Added **${item.product_name || item.productName}** to your basket.\n` +
-          `💰 Price: £${Number(item.price || 0).toFixed(2)}\n` +
+          `Price: GBP ${Number(item.price || 0).toFixed(2)}\n` +
           `Code: \`${item.code}\``,
         ephemeral: true,
       });
     }
 
-    // Views Basket
     if (subcommand === 'view') {
       const basket = await getBasket(userId);
 
@@ -90,7 +97,8 @@ module.exports = {
         if (!grouped[name]) {
           grouped[name] = {
             quantity: 0,
-            price: item.price || 0,
+            price: Number(item.price || 0),
+            robuxPrice: Number(item.robux_price || 0),
           };
         }
 
@@ -98,23 +106,26 @@ module.exports = {
       }
 
       const lines = Object.entries(grouped).map(([name, data]) => {
-        const total = Number(data.price || 0) * data.quantity;
-        return `**${name}** x${data.quantity} - £${total.toFixed(2)}`;
+        const gbpTotal = data.price * data.quantity;
+        const robuxTotal = data.robuxPrice * data.quantity;
+        const robuxLine = robuxTotal > 0 ? ` | Robux ${robuxTotal}` : '';
+
+        return `**${name}** x${data.quantity} | GBP ${gbpTotal.toFixed(2)}${robuxLine}`;
       });
 
       const total = await getBasketTotal(userId);
 
       return interaction.reply({
         content:
-          `🛒 **Your Basket**\n\n` +
+          `**Your Basket**\n\n` +
           lines.join('\n') +
-          `\n\n💰 **Total: £${Number(total.gbp || 0).toFixed(2)}**` +
-          (total.robux ? `\n🟩 **Robux: ${total.robux}**` : ''),
+          `\n\n**Total GBP: ${Number(total.gbp || 0).toFixed(2)}**` +
+          `\n**Total Robux: ${Number(total.robux || 0)}**`,
+        components: [buildCartButtons()],
         ephemeral: true,
       });
     }
 
-    // Removes code from basket
     if (subcommand === 'remove') {
       const code = interaction.options.getString('code');
       const item = await removeFromBasket(userId, code);
@@ -129,7 +140,6 @@ module.exports = {
       });
     }
 
-    // Clears basket
     if (subcommand === 'clear') {
       const removedCount = await clearBasket(userId);
 
@@ -138,5 +148,56 @@ module.exports = {
         ephemeral: true,
       });
     }
+
+    return interaction.reply({
+      content: 'That basket action is not supported.',
+      ephemeral: true,
+    });
+  },
+
+  async handleButton(interaction) {
+    const [, action] = interaction.customId.split(':');
+
+    if (action === 'checkout') {
+      await interaction.deferReply({ ephemeral: true });
+      const result = await createPurchaseTicket(interaction);
+
+      if (!result.ok) {
+        await interaction.editReply({
+          content: result.message,
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: `Purchase ticket created successfully: ${result.ticketChannel}`,
+      });
+      return;
+    }
+
+    if (action === 'clear') {
+      const removedCount = await clearBasket(interaction.user.id);
+
+      await interaction.update({
+        content:
+          removedCount > 0
+            ? `Cleared ${removedCount} item(s) from your basket.`
+            : 'Your basket was already empty.',
+        components: [],
+      });
+    }
   },
 };
+
+function buildCartButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('basket:checkout')
+      .setLabel('Checkout')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('basket:clear')
+      .setLabel('Clear Cart')
+      .setStyle(ButtonStyle.Danger)
+  );
+}
