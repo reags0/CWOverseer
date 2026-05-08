@@ -16,6 +16,7 @@ const {
   handleInviteCreate,
   handleInviteDelete,
   initializeInviteTracking,
+  refreshGuildInvites,
 } = require('./utils/inviteTracker');
 
 const WELCOME_CHANNEL_ID = '1499542330682900607';
@@ -51,6 +52,10 @@ client.on('inviteCreate', async (invite) => {
 
 client.on('inviteDelete', (invite) => {
   handleInviteDelete(invite, client);
+});
+
+client.on('guildCreate', async (guild) => {
+  await refreshGuildInvites(guild, client);
 });
 
 client.on('guildMemberAdd', async (member) => {
